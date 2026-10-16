@@ -1,6 +1,5 @@
 package com.dante.sportshuub
 
-import android.util.Log
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
@@ -8,11 +7,10 @@ import java.net.URL
 
 object EspnApi {
 
-    private const val TAG = "EspnApi"
     private const val BASE = "https://site.api.espn.com/apis/site/v2/sports"
 
     fun scoreboardUrl(league: LeagueInfo): String =
-        "$BASE/${league.espnSport}/${league.espnLeague}/scoreboard"
+        "$BASE/${league.espnSport}/${league.espnLeague}/scoreboard${league.scoreboardQuery}"
 
     // Blocking network call. Always run this off the main thread.
     fun fetchJson(url: String): JSONObject {
@@ -33,14 +31,27 @@ object EspnApi {
             conn.disconnect()
         }
     }
+
     private fun parseTeam(competitor: JSONObject): EspnGameTeam {
         val team = competitor.optJSONObject("team")
+
+        // ESPN uses 99 for "unranked"; only keep real top-25 ranks.
+        val rank = competitor.optJSONObject("curatedRank")
+            ?.optInt("current", 99)
+            ?.takeIf { it in 1..25 }
+
+        val record = competitor.optJSONArray("records")
+            ?.optJSONObject(0)
+            ?.optString("summary") ?: ""
+
         return EspnGameTeam(
             espnId = team?.optString("id") ?: "",
             abbreviation = team?.optString("abbreviation") ?: "",
             name = team?.optString("displayName") ?: "",
             logoUrl = team?.optString("logo") ?: "",
-            score = competitor.optString("score").toIntOrNull()
+            score = competitor.optString("score").toIntOrNull(),
+            rank = rank,
+            record = record
         )
     }
 
@@ -86,42 +97,34 @@ object EspnApi {
     fun fetchScoreboard(league: LeagueInfo): List<EspnGame> =
         parseScoreboard(league, fetchJson(scoreboardUrl(league)))
 
-    // TEMPORARY: logs every game on every league's scoreboard.
-    fun testScoreboards() {
-        Thread {
-            for (league in LeagueRegistry.leagues) {
-                try {
-                    val games = fetchScoreboard(league)
-                    Log.d(TAG, "${league.key}: parsed ${games.size} games")
-                    for (g in games) {
-                        Log.d(
-                            TAG,
-                            "  ${g.away.abbreviation} ${g.away.score} @ " +
-                                    "${g.home.abbreviation} ${g.home.score} " +
-                                    "| ${g.state} | ${g.statusText}"
-                        )
-                    }
-                } catch (e: Exception) {
-                    Log.e(TAG, "${league.key}: FAILED (${e.message})")
-                }
-            }
-        }.start()
-    }
-    // TEMPORARY: checks every league in the registry and logs the result.
-    fun testAllLeagues() {
-        Thread {
-            for (league in LeagueRegistry.leagues) {
-                try {
-                    val json = fetchJson(scoreboardUrl(league))
-                    val games = json.optJSONArray("events")?.length() ?: 0
-                    val feedName = json.optJSONArray("leagues")
+    // Blocking. Call off the main thread.
+    fun fetchTeams(league: LeagueInfo): List<EspnTeamInfo> {
+        val url = "$BASE/${league.espnSport}/${league.espnLeague}/teams?limit=1000"
+        val json = fetchJson(url)
+
+        val teams = json.optJSONArray("sports")
+            ?.optJSONObject(0)
+            ?.optJSONArray("leagues")
+            ?.optJSONObject(0)
+            ?.optJSONArray("teams") ?: return emptyList()
+
+        val result = mutableListOf<EspnTeamInfo>()
+
+        for (i in 0 until teams.length()) {
+            val team = teams.optJSONObject(i)?.optJSONObject("team") ?: continue
+
+            result.add(
+                EspnTeamInfo(
+                    espnId = team.optString("id"),
+                    name = team.optString("displayName"),
+                    abbreviation = team.optString("abbreviation"),
+                    logoUrl = team.optJSONArray("logos")
                         ?.optJSONObject(0)
-                        ?.optString("name") ?: "unknown"
-                    Log.d(TAG, "${league.key}: OK -> \"$feedName\", $games games on scoreboard")
-                } catch (e: Exception) {
-                    Log.e(TAG, "${league.key}: FAILED (${e.message})")
-                }
-            }
-        }.start()
+                        ?.optString("href") ?: ""
+                )
+            )
+        }
+
+        return result.sortedBy { it.name }
     }
 }

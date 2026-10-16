@@ -1,8 +1,8 @@
-
 package com.dante.sportshuub
 
 import android.app.Activity
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -27,6 +27,7 @@ class SettingsActivity : Activity() {
 
     private lateinit var progressText: TextView
     private lateinit var lastUpdatedText: TextView
+    private lateinit var favoritesText: TextView
 
     private val preferences by lazy {
         getSharedPreferences("sportshub_settings", Context.MODE_PRIVATE)
@@ -35,6 +36,13 @@ class SettingsActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(createSettingsScreen())
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::favoritesText.isInitialized) {
+            refreshFavoritesText()
+        }
     }
 
     private fun createSettingsScreen(): View {
@@ -61,13 +69,48 @@ class SettingsActivity : Activity() {
         content.addView(title)
 
         val subtitle = TextView(this).apply {
-            text = "Manage your teams and team logos"
+            text = "Manage your favorites, teams and team logos"
             textSize = 16f
             setTextColor(gray)
             setPadding(0, dp(6), 0, dp(22))
         }
 
         content.addView(subtitle)
+
+        // ---------------------------------------------------------
+        // FAVORITES
+        // ---------------------------------------------------------
+
+        content.addView(sectionTitle("FAVORITES"))
+
+        content.addView(
+            makeButton("Favorite Competitions") {
+                startActivity(
+                    Intent(this, FavoriteCompetitionsActivity::class.java)
+                )
+            }
+        )
+
+        content.addView(
+            makeButton("Favorite Teams") {
+                startActivity(
+                    Intent(this, FavoriteTeamsActivity::class.java)
+                )
+            }
+        )
+
+        favoritesText = TextView(this).apply {
+            textSize = 14f
+            setTextColor(gray)
+            setPadding(dp(4), dp(4), dp(4), dp(20))
+        }
+
+        content.addView(favoritesText)
+        refreshFavoritesText()
+
+        // ---------------------------------------------------------
+        // TEAM LOGOS
+        // ---------------------------------------------------------
 
         content.addView(sectionTitle("TEAM LOGOS"))
 
@@ -277,6 +320,12 @@ class SettingsActivity : Activity() {
 
             "Last logo update attempt: $formatted"
         }
+    }
+
+    private fun refreshFavoritesText() {
+        val leagues = FavoritesStore.getFavoriteLeagues(this).size
+        val teams = FavoritesStore.getFavoriteTeams(this).size
+        favoritesText.text = "Competitions selected: $leagues    Teams selected: $teams"
     }
 
     private fun sectionTitle(text: String): TextView {

@@ -1,34 +1,36 @@
 package com.dante.sportshuub
 
+import android.content.Intent
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
-import android.os.Bundle
-import android.view.Gravity
-import android.view.View
-import android.widget.LinearLayout
-import android.widget.TextView
-import androidx.fragment.app.FragmentActivity
-import android.widget.ScrollView
 import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
-import android.view.ViewGroup
+import android.graphics.drawable.GradientDrawable
+import android.os.Bundle
+import android.util.Log
+import android.view.Gravity
+import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
-import android.widget.Toast
-import com.bumptech.glide.Glide
-import android.util.Log
+import android.widget.LinearLayout
+import android.widget.ScrollView
+import android.widget.TextView
+import androidx.fragment.app.FragmentActivity
 
 class MainActivity : FragmentActivity() {
 
     private val backgroundColor = Color.rgb(18, 18, 21)
-    private val cardColor = Color.rgb(38, 38, 43)
-    private val focusedColor = Color.rgb(65, 65, 72)
     private val white = Color.WHITE
     private val gray = Color.rgb(180, 180, 185)
+
     private var gamesLoaded = false
-    private var liveGames: List<Game> = emptyList()
-    private var upcomingGames: List<Game> = emptyList()
-    private var finalGames: List<Game> = emptyList()
+    private var allGames: List<EspnGame> = emptyList()
+
+    private var selectedTab = 0
+    private val tabNames = listOf("LIVE", "UPCOMING", "FINAL", "FAVORITES", "TOP GAMES")
+    private val tabViews = mutableListOf<TextView>()
+    private var contentContainer: LinearLayout? = null
+
+    private var lastFavoritesSignature = ""
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -37,6 +39,25 @@ class MainActivity : FragmentActivity() {
         setContentView(createHomeScreen())
         loadRealGames()
     }
+
+    override fun onResume() {
+        super.onResume()
+
+        // Redraw only when favorites changed (e.g. after visiting Settings).
+        if (gamesLoaded && favoritesSignature() != lastFavoritesSignature) {
+            showTab(selectedTab)
+        }
+    }
+
+    private fun favoritesSignature(): String =
+        FavoritesStore.getFavoriteLeagues(this).sorted().joinToString(",") +
+            "|" +
+            FavoritesStore.getFavoriteTeams(this).sorted().joinToString(",")
+
+    // =====================================================
+    // HOME SCREEN
+    // =====================================================
+
     private fun createHomeScreen(): View {
 
         val root = LinearLayout(this)
@@ -45,9 +66,7 @@ class MainActivity : FragmentActivity() {
         root.setBackgroundColor(backgroundColor)
         root.setPadding(dp(50), dp(30), dp(50), dp(30))
 
-        // =====================================================
-        // HEADER
-        // =====================================================
+        // ---- Header ----
 
         val header = LinearLayout(this)
 
@@ -62,11 +81,7 @@ class MainActivity : FragmentActivity() {
 
         header.addView(
             title,
-            LinearLayout.LayoutParams(
-                0,
-                dp(70),
-                1f
-            )
+            LinearLayout.LayoutParams(0, dp(70), 1f)
         )
 
         val search = TextView(this)
@@ -75,16 +90,12 @@ class MainActivity : FragmentActivity() {
         search.textSize = 28f
         search.gravity = Gravity.CENTER
         search.setTextColor(white)
-
         search.isFocusable = true
         search.isFocusableInTouchMode = true
 
         header.addView(
             search,
-            LinearLayout.LayoutParams(
-                dp(70),
-                dp(70)
-            )
+            LinearLayout.LayoutParams(dp(70), dp(70))
         )
 
         val settings = TextView(this)
@@ -98,65 +109,248 @@ class MainActivity : FragmentActivity() {
         settings.contentDescription = "Settings"
 
         settings.setOnClickListener {
-            startActivity(
-                android.content.Intent(
-                    this,
-                    SettingsActivity::class.java
-                )
-            )
+            startActivity(Intent(this, SettingsActivity::class.java))
         }
 
         header.addView(
             settings,
-            LinearLayout.LayoutParams(
-                dp(70),
-                dp(70)
-            )
+            LinearLayout.LayoutParams(dp(70), dp(70))
         )
-
 
         root.addView(
             header,
-            LinearLayout.LayoutParams(
-                -1,
-                dp(70)
-            )
+            LinearLayout.LayoutParams(-1, dp(70))
         )
 
-        addGameSection(root, "LIVE NOW", liveGames, "No live games right now")
-        addGameSection(root, "UPCOMING", upcomingGames, "No upcoming games today")
-        addGameSection(root, "FINAL", finalGames, "No finished games yet today")
+        // ---- Tabs ----
 
+        root.addView(createTabBar())
+
+        // ---- Games for the selected tab ----
+
+        val content = LinearLayout(this)
+        content.orientation = LinearLayout.VERTICAL
+        contentContainer = content
 
         val scrollView = ScrollView(this)
-
-        scrollView.isFillViewport = true
         scrollView.isFocusable = false
         scrollView.isFocusableInTouchMode = false
+        scrollView.addView(content)
 
-        scrollView.addView(root)
+        root.addView(
+            scrollView,
+            LinearLayout.LayoutParams(-1, 0, 1f)
+        )
 
-        return scrollView
+        showTab(selectedTab)
+
+        return root
     }
-    private fun addGameSection(
-        root: LinearLayout,
-        title: String,
-        games: List<Game>,
-        emptyText: String
-    ) {
-        root.addView(createSectionTitle(title))
 
-        if (games.isEmpty()) {
-            val empty = TextView(this)
-            empty.text = if (gamesLoaded) emptyText else "Loading…"
-            empty.textSize = 16f
-            empty.setTextColor(gray)
-            empty.setPadding(0, dp(10), 0, dp(20))
-            root.addView(empty)
-        } else {
-            root.addView(createGameGrid(games.take(3)))
+    // =====================================================
+    // TABS
+    // =====================================================
+
+    private fun createTabBar(): LinearLayout {
+
+        val bar = LinearLayout(this)
+
+        bar.orientation = LinearLayout.HORIZONTAL
+        bar.setPadding(0, dp(6), 0, dp(10))
+
+        tabViews.clear()
+
+        for (i in tabNames.indices) {
+
+            val tab = TextView(this)
+
+            tab.text = tabNames[i]
+            tab.textSize = 16f
+            tab.typeface = Typeface.DEFAULT_BOLD
+            tab.gravity = Gravity.CENTER
+            tab.setPadding(dp(22), dp(10), dp(22), dp(10))
+            tab.isFocusable = true
+            tab.isFocusableInTouchMode = true
+
+            tab.setOnClickListener { selectTab(i) }
+            tab.setOnFocusChangeListener { _, _ -> styleTabs() }
+
+            tabViews.add(tab)
+
+            bar.addView(
+                tab,
+                LinearLayout.LayoutParams(-2, -2).apply {
+                    setMargins(0, 0, dp(10), 0)
+                }
+            )
+        }
+
+        styleTabs()
+
+        return bar
+    }
+
+    private fun styleTabs() {
+
+        for (i in tabViews.indices) {
+
+            val tab = tabViews[i]
+            val selected = i == selectedTab
+
+            val bg = GradientDrawable()
+
+            bg.cornerRadius = dp(22).toFloat()
+            bg.setColor(
+                if (selected) Color.rgb(65, 65, 72) else Color.TRANSPARENT
+            )
+
+            if (tab.isFocused) {
+                bg.setStroke(dp(3), Color.WHITE)
+            }
+
+            tab.background = bg
+            tab.setTextColor(if (selected) white else gray)
         }
     }
+
+    private fun selectTab(index: Int) {
+        selectedTab = index
+        styleTabs()
+        showTab(index)
+    }
+
+    private fun createMessage(text: String): TextView {
+
+        val message = TextView(this)
+
+        message.text = text
+        message.textSize = 18f
+        message.setTextColor(gray)
+        message.setPadding(0, dp(20), 0, dp(20))
+
+        return message
+    }
+
+    private fun showTab(index: Int) {
+
+        val content = contentContainer ?: return
+
+        content.removeAllViews()
+
+        if (!gamesLoaded) {
+            content.addView(createMessage("Loading…"))
+            return
+        }
+
+        val favLeagues = FavoritesStore.getFavoriteLeagues(this)
+        val favTeams = FavoritesStore.getFavoriteTeams(this)
+
+        lastFavoritesSignature = favoritesSignature()
+
+        val games: List<EspnGame> = when (index) {
+            0 -> GameRanking.sortFavoritesFirst(
+                allGames.filter { it.state == "in" },
+                favLeagues,
+                favTeams
+            )
+            1 -> GameRanking.sortFavoritesFirst(
+                allGames.filter { it.state == "pre" },
+                favLeagues,
+                favTeams
+            )
+            2 -> GameRanking.sortFavoritesFirst(
+                allGames.filter { it.state == "post" },
+                favLeagues,
+                favTeams,
+                newestFirst = true
+            )
+            3 -> GameRanking.favoriteGames(allGames, favLeagues, favTeams)
+            else -> GameRanking.topGames(allGames)
+        }
+
+        if (games.isEmpty()) {
+            val text = when (index) {
+                0 -> "No live games right now"
+                1 -> "No upcoming games today"
+                2 -> "No finished games yet today"
+                3 ->
+                    if (favLeagues.isEmpty() && favTeams.isEmpty()) {
+                        "No favorites yet. Pick teams and competitions in Settings (⚙)."
+                    } else {
+                        "No games for your favorites today"
+                    }
+                else -> "No games to show right now"
+            }
+            content.addView(createMessage(text))
+            return
+        }
+
+        addGameRows(content, games.take(60).map { it.toTileGame() })
+    }
+
+    private fun addGameRows(
+        container: LinearLayout,
+        games: List<Game>
+    ) {
+
+        val perRow = 3
+
+        for (start in 0 until games.size step perRow) {
+
+            val rowGames = games.subList(
+                start,
+                minOf(start + perRow, games.size)
+            )
+
+            val row = LinearLayout(this)
+
+            row.orientation = LinearLayout.HORIZONTAL
+            row.setPadding(0, dp(5), 0, dp(12))
+
+            val cards = mutableListOf<FrameLayout>()
+
+            for (game in rowGames) {
+
+                val card = createGameCard(game)
+
+                cards.add(card)
+
+                row.addView(
+                    card,
+                    LinearLayout.LayoutParams(0, dp(CARD_HEIGHT), 1f).apply {
+                        setMargins(dp(6), 0, dp(6), 0)
+                    }
+                )
+            }
+
+            // Keep short rows the same card size as full rows.
+            repeat(perRow - rowGames.size) {
+                row.addView(
+                    View(this),
+                    LinearLayout.LayoutParams(0, dp(CARD_HEIGHT), 1f).apply {
+                        setMargins(dp(6), 0, dp(6), 0)
+                    }
+                )
+            }
+
+            for (i in cards.indices) {
+
+                if (i > 0) {
+                    cards[i].nextFocusLeftId = cards[i - 1].id
+                }
+
+                if (i < cards.size - 1) {
+                    cards[i].nextFocusRightId = cards[i + 1].id
+                }
+            }
+
+            container.addView(row)
+        }
+    }
+
+    // =====================================================
+    // LOADING REAL GAMES
+    // =====================================================
 
     private fun loadRealGames() {
         Thread {
@@ -170,29 +364,24 @@ class MainActivity : FragmentActivity() {
                 }
             }
 
-            val live = espnGames
-                .filter { it.state == "in" }
-                .map { it.toTileGame() }
+            Log.d(
+                "MainActivity",
+                "Games loaded: live=${espnGames.count { it.state == "in" }}, " +
+                    "upcoming=${espnGames.count { it.state == "pre" }}, " +
+                    "final=${espnGames.count { it.state == "post" }}"
+            )
 
-            val upcoming = espnGames
-                .filter { it.state == "pre" }
-                .sortedBy { it.startTime }
-                .map { it.toTileGame() }
-
-            val finished = espnGames
-                .filter { it.state == "post" }
-                .sortedByDescending { it.startTime }
-                .map { it.toTileGame() }
+            Log.d(
+                "MainActivity",
+                "Per league: " + espnGames.groupingBy { it.leagueKey }.eachCount()
+            )
 
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
 
-                liveGames = live
-                upcomingGames = upcoming
-                finalGames = finished
+                allGames = espnGames
                 gamesLoaded = true
-
-                setContentView(createHomeScreen())
+                showTab(selectedTab)
             }
         }.start()
     }
@@ -233,92 +422,10 @@ class MainActivity : FragmentActivity() {
             }
         }
     }
-    private fun createSectionTitle(text: String): TextView {
 
-        val title = TextView(this)
-
-        title.text = text
-        title.textSize = 20f
-        title.setTextColor(gray)
-
-        title.gravity = Gravity.CENTER_VERTICAL
-
-        title.setPadding(
-            0,
-            dp(8),
-            0,
-            0
-        )
-
-        return title
-    }
-
-    private fun createGameGrid(
-        games: List<Game>
-    ): LinearLayout {
-
-        val row = LinearLayout(this)
-
-        row.orientation = LinearLayout.HORIZONTAL
-
-        row.setPadding(
-            0,
-            dp(5),
-            0,
-            dp(12)
-        )
-
-        val cards = mutableListOf<FrameLayout>()
-
-        for (game in games) {
-
-            val card = createGameCard(game)
-
-            cards.add(card)
-
-            row.addView(
-                card,
-                LinearLayout.LayoutParams(
-                    0,
-                    dp(145),
-                    1f
-                ).apply {
-                    setMargins(
-                        dp(6),
-                        0,
-                        dp(6),
-                        0
-                    )
-                }
-            )
-        }
-        repeat(3 - games.size) {
-            row.addView(
-                View(this),
-                LinearLayout.LayoutParams(0, dp(145), 1f).apply {
-                    setMargins(dp(6), 0, dp(6), 0)
-                }
-            )
-        }
-        // =====================================================
-        // EXPLICIT LEFT / RIGHT NAVIGATION
-        // =====================================================
-
-        for (i in cards.indices) {
-
-            val card = cards[i]
-
-            if (i > 0) {
-                card.nextFocusLeftId = cards[i - 1].id
-            }
-
-            if (i < cards.size - 1) {
-                card.nextFocusRightId = cards[i + 1].id
-            }
-        }
-
-        return row
-    }
+    // =====================================================
+    // GAME TILE
+    // =====================================================
 
     private fun createGameCard(
         game: Game
@@ -331,70 +438,34 @@ class MainActivity : FragmentActivity() {
         card.isFocusable = true
         card.isFocusableInTouchMode = true
 
-        // =====================================================
-        // VIDEO / IMAGE BACKGROUND
-        // =====================================================
+        // ---- Background + dark overlay ----
 
         val background = ImageView(this)
 
         background.scaleType = ImageView.ScaleType.CENTER_CROP
+        background.setImageDrawable(ColorDrawable(Color.rgb(45, 45, 50)))
 
-        background.setImageDrawable(
-            ColorDrawable(
-                Color.rgb(45, 45, 50)
-            )
-        )
-
-        card.addView(
-            background,
-            FrameLayout.LayoutParams(
-                -1,
-                -1
-            )
-        )
-
-        // =====================================================
-        // DARK OVERLAY
-        // =====================================================
+        card.addView(background, FrameLayout.LayoutParams(-1, -1))
 
         val overlay = View(this)
 
-        overlay.setBackgroundColor(
-            Color.argb(
-                145,
-                0,
-                0,
-                0
-            )
-        )
+        overlay.setBackgroundColor(Color.argb(145, 0, 0, 0))
 
-        card.addView(
-            overlay,
-            FrameLayout.LayoutParams(
-                -1,
-                -1
-            )
-        )
+        card.addView(overlay, FrameLayout.LayoutParams(-1, -1))
 
-        // =====================================================
-        // GAME INFORMATION
-        // =====================================================
+        // ---- Game information ----
+        // Heights below add up to exactly the space inside the card
+        // (160dp card - 16dp padding = 144dp = 20 + 96 + 28), so the
+        // status line / start time at the bottom is never clipped.
 
         val info = LinearLayout(this)
 
         info.orientation = LinearLayout.VERTICAL
         info.gravity = Gravity.CENTER
 
-        info.setPadding(
-            dp(12),
-            dp(10),
-            dp(12),
-            dp(10)
-        )
+        info.setPadding(dp(12), dp(8), dp(12), dp(8))
 
-        // =====================================================
-        // SPORT / LEAGUE
-        // =====================================================
+        // Sport / league
 
         val sport = TextView(this)
 
@@ -403,26 +474,16 @@ class MainActivity : FragmentActivity() {
         sport.setTextColor(Color.LTGRAY)
         sport.gravity = Gravity.CENTER
 
-        info.addView(
-            sport,
-            LinearLayout.LayoutParams(
-                -1,
-                dp(25)
-            )
-        )
+        info.addView(sport, LinearLayout.LayoutParams(-1, dp(20)))
 
-        // =====================================================
-        // TEAMS + LOGOS + SCORE
-        // =====================================================
+        // Teams + logos + score
 
         val teamsLayout = LinearLayout(this)
 
         teamsLayout.orientation = LinearLayout.HORIZONTAL
         teamsLayout.gravity = Gravity.CENTER
 
-        // -----------------------------------------------------
-        // AWAY TEAM
-        // -----------------------------------------------------
+        // Away team
 
         val awayLayout = LinearLayout(this)
 
@@ -433,13 +494,7 @@ class MainActivity : FragmentActivity() {
 
         awayLogo.scaleType = ImageView.ScaleType.CENTER_INSIDE
 
-        awayLayout.addView(
-            awayLogo,
-            LinearLayout.LayoutParams(
-                dp(55),
-                dp(55)
-            )
-        )
+        awayLayout.addView(awayLogo, LinearLayout.LayoutParams(dp(52), dp(52)))
 
         val awayName = TextView(this)
 
@@ -449,17 +504,9 @@ class MainActivity : FragmentActivity() {
         awayName.setTextColor(Color.WHITE)
         awayName.gravity = Gravity.CENTER
 
-        awayLayout.addView(
-            awayName,
-            LinearLayout.LayoutParams(
-                dp(85),
-                dp(35)
-            )
-        )
+        awayLayout.addView(awayName, LinearLayout.LayoutParams(dp(85), dp(34)))
 
-        // -----------------------------------------------------
-        // SCORE
-        // -----------------------------------------------------
+        // Score
 
         val score = TextView(this)
 
@@ -475,9 +522,7 @@ class MainActivity : FragmentActivity() {
         score.setTextColor(Color.WHITE)
         score.gravity = Gravity.CENTER
 
-        // -----------------------------------------------------
-        // HOME TEAM
-        // -----------------------------------------------------
+        // Home team
 
         val homeLayout = LinearLayout(this)
 
@@ -488,13 +533,7 @@ class MainActivity : FragmentActivity() {
 
         homeLogo.scaleType = ImageView.ScaleType.CENTER_INSIDE
 
-        homeLayout.addView(
-            homeLogo,
-            LinearLayout.LayoutParams(
-                dp(55),
-                dp(55)
-            )
-        )
+        homeLayout.addView(homeLogo, LinearLayout.LayoutParams(dp(52), dp(52)))
 
         val homeName = TextView(this)
 
@@ -504,56 +543,18 @@ class MainActivity : FragmentActivity() {
         homeName.setTextColor(Color.WHITE)
         homeName.gravity = Gravity.CENTER
 
-        homeLayout.addView(
-            homeName,
-            LinearLayout.LayoutParams(
-                dp(85),
-                dp(35)
-            )
-        )
+        homeLayout.addView(homeName, LinearLayout.LayoutParams(dp(85), dp(34)))
 
         loadTeamLogo(game, game.awayTeam, game.awayLogo, awayLogo)
         loadTeamLogo(game, game.homeTeam, game.homeLogo, homeLogo)
 
-        // -----------------------------------------------------
-        // PUT TEAMS + SCORE TOGETHER
-        // -----------------------------------------------------
+        teamsLayout.addView(awayLayout, LinearLayout.LayoutParams(dp(90), dp(96)))
+        teamsLayout.addView(score, LinearLayout.LayoutParams(dp(75), dp(96)))
+        teamsLayout.addView(homeLayout, LinearLayout.LayoutParams(dp(90), dp(96)))
 
-        teamsLayout.addView(
-            awayLayout,
-            LinearLayout.LayoutParams(
-                dp(90),
-                dp(100)
-            )
-        )
+        info.addView(teamsLayout, LinearLayout.LayoutParams(-1, dp(96)))
 
-        teamsLayout.addView(
-            score,
-            LinearLayout.LayoutParams(
-                dp(75),
-                dp(100)
-            )
-        )
-
-        teamsLayout.addView(
-            homeLayout,
-            LinearLayout.LayoutParams(
-                dp(90),
-                dp(100)
-            )
-        )
-
-        info.addView(
-            teamsLayout,
-            LinearLayout.LayoutParams(
-                -1,
-                dp(115)
-            )
-        )
-
-        // =====================================================
-        // STATUS
-        // =====================================================
+        // Status / start time
 
         val status = TextView(this)
 
@@ -562,29 +563,11 @@ class MainActivity : FragmentActivity() {
         status.setTextColor(Color.WHITE)
         status.gravity = Gravity.CENTER
 
-        info.addView(
-            status,
-            LinearLayout.LayoutParams(
-                -1,
-                dp(30)
-            )
-        )
+        info.addView(status, LinearLayout.LayoutParams(-1, dp(28)))
 
-        // =====================================================
-        // ADD INFORMATION TO CARD
-        // =====================================================
+        card.addView(info, FrameLayout.LayoutParams(-1, -1))
 
-        card.addView(
-            info,
-            FrameLayout.LayoutParams(
-                -1,
-                -1
-            )
-        )
-
-        // =====================================================
-        // FOCUS EFFECT
-        // =====================================================
+        // ---- Focus effect ----
 
         setNormalBackground(card)
 
@@ -592,34 +575,25 @@ class MainActivity : FragmentActivity() {
 
             if (hasFocus) {
 
-                setFocusedBackground(
-                    view as FrameLayout
-                )
+                setFocusedBackground(view as FrameLayout)
 
                 view.scaleX = 1.05f
                 view.scaleY = 1.05f
 
             } else {
 
-                setNormalBackground(
-                    view as FrameLayout
-                )
+                setNormalBackground(view as FrameLayout)
 
                 view.scaleX = 1f
                 view.scaleY = 1f
             }
         }
 
-        // =====================================================
-        // CLICK
-        // =====================================================
+        // ---- Click ----
 
         card.setOnClickListener {
 
-            val intent = android.content.Intent(
-                this,
-                GameDetailsActivity::class.java
-            )
+            val intent = Intent(this, GameDetailsActivity::class.java)
 
             intent.putExtra("id", game.id)
             intent.putExtra("sport", game.sport)
@@ -641,88 +615,33 @@ class MainActivity : FragmentActivity() {
 
         return card
     }
-    private fun setNormalBackground(
-        view: FrameLayout
-    ) {
+
+    private fun setNormalBackground(view: FrameLayout) {
 
         val background = GradientDrawable()
 
-        background.setColor(
-            Color.TRANSPARENT
-        )
-
-        background.cornerRadius =
-            dp(10).toFloat()
+        background.setColor(Color.TRANSPARENT)
+        background.cornerRadius = dp(10).toFloat()
 
         view.background = background
     }
 
-    private fun setFocusedBackground(
-        view: FrameLayout
-    ) {
+    private fun setFocusedBackground(view: FrameLayout) {
 
         val background = GradientDrawable()
 
-        background.setColor(
-            Color.TRANSPARENT
-        )
-
-        background.cornerRadius =
-            dp(10).toFloat()
-
-        background.setStroke(
-            dp(3),
-            Color.WHITE
-        )
+        background.setColor(Color.TRANSPARENT)
+        background.cornerRadius = dp(10).toFloat()
+        background.setStroke(dp(3), Color.WHITE)
 
         view.background = background
     }
 
     private fun dp(value: Int): Int {
-
-        return (
-                value *
-                        resources.displayMetrics.density
-                ).toInt()
+        return (value * resources.displayMetrics.density).toInt()
     }
-    private fun testCelticsDownload() {
 
-        val celtics = TeamRepository.getTeam(
-            "NBA",
-            "BOS"
-        )
-
-        if (celtics == null) {
-            Toast.makeText(
-                this,
-                "Celtics not found",
-                Toast.LENGTH_LONG
-            ).show()
-
-            return
-        }
-
-        LogoManager.loadLogo(
-            this,
-            celtics
-        ) { bitmap ->
-
-            if (bitmap != null) {
-
-                Toast.makeText(
-                    this,
-                    "Celtics logo downloaded!",
-                    Toast.LENGTH_LONG
-                ).show()
-
-            } else {
-
-                Toast.makeText(
-                    this,
-                    "Logo download failed",
-                    Toast.LENGTH_LONG
-                ).show()
-            }
-        }
+    companion object {
+        private const val CARD_HEIGHT = 160
     }
 }

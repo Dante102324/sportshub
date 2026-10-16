@@ -1,11 +1,12 @@
 package com.dante.sportshuub
 
 data class LeagueInfo(
-    val key: String,         // our stable key; matches TeamEntity.league (e.g. "NBA")
+    val key: String,          // our stable key; matches TeamEntity.league (e.g. "NBA")
     val displayName: String,
-    val sport: String,       // our sport label
-    val espnSport: String,   // ESPN URL segment, e.g. "basketball"
-    val espnLeague: String   // ESPN URL segment, e.g. "nba" or "eng.1"
+    val sport: String,        // our sport label
+    val espnSport: String,    // ESPN URL segment, e.g. "basketball"
+    val espnLeague: String,   // ESPN URL segment, e.g. "nba" or "eng.1"
+    val scoreboardQuery: String = ""   // extra URL parameters, e.g. "?groups=80"
 )
 
 object LeagueRegistry {
@@ -15,6 +16,14 @@ object LeagueRegistry {
         LeagueInfo("NFL", "NFL", "Football", "football", "nfl"),
         LeagueInfo("MLB", "MLB", "Baseball", "baseball", "mlb"),
         LeagueInfo("NHL", "NHL", "Hockey", "hockey", "nhl"),
+        LeagueInfo(
+            "CFB", "College Football", "Football", "football", "college-football",
+            "?groups=80&limit=300"
+        ),
+        LeagueInfo(
+            "CBB", "College Basketball", "Basketball", "basketball", "mens-college-basketball",
+            "?groups=50&limit=300"
+        ),
         LeagueInfo("MLS", "MLS", "Soccer", "soccer", "usa.1"),
         LeagueInfo("BRASILEIRAO", "Brasileirão", "Soccer", "soccer", "bra.1"),
         LeagueInfo("LIBERTADORES", "Copa Libertadores", "Soccer", "soccer", "conmebol.libertadores"),

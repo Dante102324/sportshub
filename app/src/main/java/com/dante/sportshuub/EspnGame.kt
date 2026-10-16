@@ -5,7 +5,9 @@ data class EspnGameTeam(
     val abbreviation: String,
     val name: String,
     val logoUrl: String,
-    val score: Int?
+    val score: Int?,
+    val rank: Int? = null,     // poll rank (1-25) for ranked college teams
+    val record: String = ""    // season record, e.g. "5-1"
 )
 
 data class EspnGame(
@@ -16,4 +18,11 @@ data class EspnGame(
     val statusText: String,
     val home: EspnGameTeam,
     val away: EspnGameTeam
+)
+
+data class EspnTeamInfo(
+    val espnId: String,
+    val name: String,
+    val abbreviation: String,
+    val logoUrl: String
 )
