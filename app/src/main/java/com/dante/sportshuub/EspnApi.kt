@@ -345,4 +345,237 @@ object EspnApi {
 
         out.add(ConferenceInfo(leagueKey, id, name, shortName, teamIds))
     }
+
+    // =====================================================
+    // STANDINGS
+    // =====================================================
+
+    // Blocking. Call off the main thread. Empty list = nothing available.
+    fun fetchStandings(league: LeagueInfo): List<StandingsTable> {
+        val base = "$STANDINGS_BASE/${league.espnSport}/${league.espnLeague}/standings"
+
+        val urls = mutableListOf<String>()
+        if (league.standingsGroup.isNotEmpty()) {
+            urls.add("$base?group=${league.standingsGroup}")
+        }
+        urls.add(base)
+
+        for (url in urls) {
+            try {
+                val tables = parseStandings(league, fetchJson(url))
+                if (tables.isNotEmpty()) return tables
+                Log.w("EspnApi", "No standings found at $url")
+            } catch (e: Exception) {
+                Log.e("EspnApi", "Standings failed at $url: ${e.message}")
+            }
+        }
+        return emptyList()
+    }
+
+    // Stats to show per sport: ESPN stat name -> column header.
+    private fun columnSpec(league: LeagueInfo): List<Pair<String, String>> = when (league.sport) {
+        "Soccer" -> listOf(
+            "gamesPlayed" to "GP", "wins" to "W", "ties" to "D", "losses" to "L",
+            "pointDifferential" to "GD", "points" to "P"
+        )
+        "Hockey" -> listOf(
+            "gamesPlayed" to "GP", "wins" to "W", "losses" to "L",
+            "overtimeLosses" to "OTL", "points" to "PTS"
+        )
+        "Baseball" -> listOf(
+            "wins" to "W", "losses" to "L", "winPercent" to "PCT",
+            "gamesBehind" to "GB", "streak" to "STRK"
+        )
+        "Football" -> listOf(
+            "wins" to "W", "losses" to "L", "ties" to "T", "winPercent" to "PCT",
+            "pointsFor" to "PF", "pointsAgainst" to "PA", "streak" to "STRK"
+        )
+        else -> listOf(
+            "wins" to "W", "losses" to "L", "winPercent" to "PCT",
+            "gamesBehind" to "GB", "streak" to "STRK"
+        )
+    }
+
+    private class RawEntry(
+        val team: JSONObject,
+        // stat name -> (value to show, short label)
+        val stats: Map<String, Pair<String, String>>
+    )
+
+    private fun rawEntries(entries: JSONArray): List<RawEntry> {
+        val out = mutableListOf<RawEntry>()
+
+        for (i in 0 until entries.length()) {
+            val entry = entries.optJSONObject(i) ?: continue
+            val team = entry.optJSONObject("team") ?: continue
+
+            val stats = LinkedHashMap<String, Pair<String, String>>()
+            val statArray = entry.optJSONArray("stats")
+
+            if (statArray != null) {
+                for (j in 0 until statArray.length()) {
+                    val stat = statArray.optJSONObject(j) ?: continue
+                    val name = stat.optString("name")
+                    if (name.isEmpty()) continue
+
+                    val shown = stat.optString("displayValue")
+                        .ifEmpty { stat.optString("value") }
+
+                    val label = stat.optString("abbreviation")
+                        .ifEmpty { stat.optString("shortDisplayName").ifEmpty { name } }
+
+                    stats[name] = Pair(shown, label)
+                }
+            }
+            out.add(RawEntry(team, stats))
+        }
+        return out
+    }
+
+    private fun statNumber(entry: RawEntry, name: String): Double? =
+        entry.stats[name]?.first?.replace("%", "")?.replace("+", "")?.toDoubleOrNull()
+
+    private fun leafNodes(node: JSONObject, out: MutableList<JSONObject>) {
+        val children = node.optJSONArray("children")
+
+        if (children != null && children.length() > 0) {
+            for (i in 0 until children.length()) {
+                val child = children.optJSONObject(i) ?: continue
+                leafNodes(child, out)
+            }
+            return
+        }
+        out.add(node)
+    }
+
+    fun parseStandings(league: LeagueInfo, json: JSONObject): List<StandingsTable> {
+
+        val leaves = mutableListOf<JSONObject>()
+        leafNodes(json, leaves)
+
+        val tables = mutableListOf<StandingsTable>()
+
+        for (node in leaves) {
+            val entries = node.optJSONObject("standings")?.optJSONArray("entries") ?: continue
+            val raws = rawEntries(entries)
+            if (raws.isEmpty()) continue
+
+            // Columns: the preferred stats that most teams actually have.
+            var columns = columnSpec(league).filter { (name, _) ->
+                raws.count { name in it.stats } * 2 >= raws.size
+            }
+
+            // Unknown format? Show the first few stats ESPN sent, with its labels.
+            if (columns.size < 2) {
+                columns = raws.first().stats.entries
+                    .take(6)
+                    .map { it.key to it.value.second }
+            }
+
+            Log.d(
+                "EspnApi",
+                "Standings ${league.key} '${node.optString("name")}' stats: " +
+                    raws.first().stats.keys
+            )
+
+            // Order: ESPN's own rank / seed, then points, then win percentage.
+            val ordered = when {
+                raws.count { statNumber(it, "rank") != null } * 2 >= raws.size ->
+                    raws.sortedBy { statNumber(it, "rank") ?: 9999.0 }
+                raws.count { statNumber(it, "playoffSeed") != null } * 2 >= raws.size ->
+                    raws.sortedBy { statNumber(it, "playoffSeed") ?: 9999.0 }
+                columns.any { it.first == "points" } ->
+                    raws.sortedByDescending { statNumber(it, "points") ?: -1.0 }
+                columns.any { it.first == "winPercent" } ->
+                    raws.sortedByDescending { statNumber(it, "winPercent") ?: -1.0 }
+                else -> raws
+            }
+
+            val rows = ordered.mapIndexed { index, raw ->
+                val team = raw.team
+                StandingsRow(
+                    position = index + 1,
+                    teamId = team.optString("id"),
+                    teamName = team.optString("displayName")
+                        .ifEmpty { team.optString("shortDisplayName") },
+                    abbreviation = team.optString("abbreviation"),
+                    logoUrl = team.optJSONArray("logos")
+                        ?.optJSONObject(0)
+                        ?.optString("href") ?: team.optString("logo"),
+                    values = columns.map { (name, _) -> raw.stats[name]?.first ?: "-" }
+                )
+            }
+
+            tables.add(
+                StandingsTable(
+                    name = node.optString("name").ifEmpty { node.optString("abbreviation") },
+                    columns = columns.map { it.second },
+                    rows = rows
+                )
+            )
+        }
+        return tables
+    }
+
+    // =====================================================
+    // RANKINGS (AP Top 25, College Football Playoff, ...)
+    // =====================================================
+
+    // Blocking. Call off the main thread.
+    fun fetchRankings(league: LeagueInfo): List<RankingPoll> =
+        parseRankings(
+            fetchJson("$BASE/${league.espnSport}/${league.espnLeague}/rankings")
+        )
+
+    private fun cleanNumber(text: String): String =
+        if (text == "0" || text == "0.0") "" else text.removeSuffix(".0")
+
+    fun parseRankings(json: JSONObject): List<RankingPoll> {
+
+        val polls = json.optJSONArray("rankings") ?: return emptyList()
+        val result = mutableListOf<RankingPoll>()
+
+        for (i in 0 until polls.length()) {
+            val poll = polls.optJSONObject(i) ?: continue
+            val ranksJson = poll.optJSONArray("ranks") ?: continue
+
+            val ranks = mutableListOf<RankedTeam>()
+
+            for (j in 0 until ranksJson.length()) {
+                val entry = ranksJson.optJSONObject(j) ?: continue
+                val team = entry.optJSONObject("team") ?: continue
+
+                val current = entry.optInt("current", 0)
+                if (current <= 0) continue
+
+                ranks.add(
+                    RankedTeam(
+                        rank = current,
+                        teamId = team.optString("id"),
+                        name = team.optString("location")
+                            .ifEmpty { team.optString("displayName") },
+                        abbreviation = team.optString("abbreviation"),
+                        logoUrl = team.optJSONArray("logos")
+                            ?.optJSONObject(0)
+                            ?.optString("href") ?: team.optString("logo"),
+                        record = entry.optString("recordSummary"),
+                        points = cleanNumber(entry.optString("points")),
+                        previous = cleanNumber(entry.optString("previous"))
+                    )
+                )
+            }
+
+            if (ranks.isEmpty()) continue
+
+            result.add(
+                RankingPoll(
+                    name = poll.optString("name"),
+                    type = poll.optString("type"),
+                    week = poll.optJSONObject("occurrence")?.optString("displayValue") ?: "",
+                    ranks = ranks.sortedBy { it.rank }
+                )
+            )
+        }
+        return result
+    }
 }

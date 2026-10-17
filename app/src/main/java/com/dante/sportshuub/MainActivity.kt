@@ -26,7 +26,10 @@ class MainActivity : FragmentActivity() {
     private var allGames: List<EspnGame> = emptyList()
 
     private var selectedTab = 0
-    private val tabNames = listOf("LIVE", "UPCOMING", "FINAL", "FAVORITES", "TOP GAMES")
+    private val tabNames =
+        listOf("LIVE", "UPCOMING", "FINAL", "FAVORITES", "TOP GAMES", "STANDINGS")
+    private val standingsTab = 5
+    private val standingsPanel by lazy { StandingsPanel(this) }
     private val tabViews = mutableListOf<TextView>()
     private var contentContainer: LinearLayout? = null
 
@@ -188,7 +191,7 @@ class MainActivity : FragmentActivity() {
             tab.textSize = 16f
             tab.typeface = Typeface.DEFAULT_BOLD
             tab.gravity = Gravity.CENTER
-            tab.setPadding(dp(22), dp(10), dp(22), dp(10))
+            tab.setPadding(dp(18), dp(10), dp(18), dp(10))
             tab.isFocusable = true
             tab.isFocusableInTouchMode = true
 
@@ -200,7 +203,7 @@ class MainActivity : FragmentActivity() {
             bar.addView(
                 tab,
                 LinearLayout.LayoutParams(-2, -2).apply {
-                    setMargins(0, 0, dp(10), 0)
+                    setMargins(0, 0, dp(8), 0)
                 }
             )
         }
@@ -256,6 +259,11 @@ class MainActivity : FragmentActivity() {
         val content = contentContainer ?: return
 
         content.removeAllViews()
+
+        if (index == standingsTab) {
+            standingsPanel.show(content)
+            return
+        }
 
         if (!gamesLoaded) {
             content.addView(createMessage("Loading…"))
@@ -404,6 +412,15 @@ class MainActivity : FragmentActivity() {
                 "Per league: " + espnGames.groupingBy { it.leagueKey }.eachCount()
             )
 
+            // Fill in poll rankings the scoreboard didn't include.
+            val ranks = try {
+                RankingsRepository.rankMap()
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Rankings failed: ${e.message}")
+                emptyMap()
+            }
+            val rankedGames = RankingsRepository.applyRanks(espnGames, ranks)
+
             val confKeys = try {
                 ConferenceRepository.favoriteConferenceTeamKeys(this)
             } catch (e: Exception) {
@@ -414,7 +431,7 @@ class MainActivity : FragmentActivity() {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
 
-                allGames = espnGames
+                allGames = rankedGames
                 conferenceTeamKeys = confKeys
                 gamesLoaded = true
                 showTab(selectedTab)
@@ -534,7 +551,7 @@ class MainActivity : FragmentActivity() {
 
         val awayName = TextView(this)
 
-        awayName.text = game.awayTeam
+        awayName.text = TeamLabels.withRank(game.awayTeam, game.awayRank)
         awayName.textSize = 17f
         awayName.typeface = Typeface.DEFAULT_BOLD
         awayName.setTextColor(Color.WHITE)
@@ -573,7 +590,7 @@ class MainActivity : FragmentActivity() {
 
         val homeName = TextView(this)
 
-        homeName.text = game.homeTeam
+        homeName.text = TeamLabels.withRank(game.homeTeam, game.homeRank)
         homeName.textSize = 17f
         homeName.typeface = Typeface.DEFAULT_BOLD
         homeName.setTextColor(Color.WHITE)
@@ -646,6 +663,8 @@ class MainActivity : FragmentActivity() {
             intent.putExtra("streamingService", game.streamingService)
             intent.putExtra("iptvChannel", game.iptvChannel)
             intent.putExtra("state", game.state)
+            intent.putExtra("awayRank", game.awayRank ?: 0)
+            intent.putExtra("homeRank", game.homeRank ?: 0)
 
             startActivity(intent)
         }

@@ -56,7 +56,9 @@ class GameDetailsActivity : FragmentActivity() {
             network = intent.getStringExtra("network") ?: "",
             streamingService = intent.getStringExtra("streamingService") ?: "",
             iptvChannel = intent.getStringExtra("iptvChannel") ?: "",
-            state = intent.getStringExtra("state") ?: ""
+            state = intent.getStringExtra("state") ?: "",
+            awayRank = intent.getIntExtra("awayRank", 0).takeIf { it > 0 },
+            homeRank = intent.getIntExtra("homeRank", 0).takeIf { it > 0 }
         )
 
         // Tile ids look like "NBA_401234567" (league key + ESPN game id).
@@ -357,7 +359,7 @@ class GameDetailsActivity : FragmentActivity() {
 
         val awayName = TextView(this)
 
-        awayName.text = game.awayTeam
+        awayName.text = TeamLabels.withRank(game.awayTeam, game.awayRank)
         awayName.textSize = 24f
         awayName.typeface = Typeface.DEFAULT_BOLD
         awayName.setTextColor(Color.WHITE)
@@ -396,7 +398,7 @@ class GameDetailsActivity : FragmentActivity() {
 
         val homeName = TextView(this)
 
-        homeName.text = game.homeTeam
+        homeName.text = TeamLabels.withRank(game.homeTeam, game.homeRank)
         homeName.textSize = 24f
         homeName.typeface = Typeface.DEFAULT_BOLD
         homeName.setTextColor(Color.WHITE)
