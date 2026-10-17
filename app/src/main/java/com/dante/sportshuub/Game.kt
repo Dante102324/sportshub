@@ -14,5 +14,6 @@ data class Game(
     val homeLogo: String = "",
     val network: String = "",
     val streamingService: String = "",
-    val iptvChannel: String = ""
+    val iptvChannel: String = "",
+    val state: String = ""   // "pre", "in" or "post"
 )

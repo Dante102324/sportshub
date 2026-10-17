@@ -48,6 +48,7 @@ fun EspnGame.toTileGame(): Game {
         status = if (state == "pre") formatStartTime(startTime).ifEmpty { statusText } else statusText,
         startTime = startTime,
         awayLogo = away.logoUrl,
-        homeLogo = home.logoUrl
+        homeLogo = home.logoUrl,
+        state = state
     )
 }

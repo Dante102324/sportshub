@@ -6,7 +6,8 @@ data class LeagueInfo(
     val sport: String,        // our sport label
     val espnSport: String,    // ESPN URL segment, e.g. "basketball"
     val espnLeague: String,   // ESPN URL segment, e.g. "nba" or "eng.1"
-    val scoreboardQuery: String = ""   // extra URL parameters, e.g. "?groups=80"
+    val scoreboardQuery: String = "",  // extra URL parameters, e.g. "?groups=80"
+    val standingsGroup: String = ""    // ESPN group for conference standings (college)
 )
 
 object LeagueRegistry {
@@ -18,11 +19,13 @@ object LeagueRegistry {
         LeagueInfo("NHL", "NHL", "Hockey", "hockey", "nhl"),
         LeagueInfo(
             "CFB", "College Football", "Football", "football", "college-football",
-            "?groups=80&limit=300"
+            "?groups=80&limit=300",
+            standingsGroup = "80"
         ),
         LeagueInfo(
             "CBB", "College Basketball", "Basketball", "basketball", "mens-college-basketball",
-            "?groups=50&limit=300"
+            "?groups=50&limit=300",
+            standingsGroup = "50"
         ),
         LeagueInfo("MLS", "MLS", "Soccer", "soccer", "usa.1"),
         LeagueInfo("BRASILEIRAO", "Brasileirão", "Soccer", "soccer", "bra.1"),

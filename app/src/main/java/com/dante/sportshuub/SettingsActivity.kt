@@ -99,6 +99,14 @@ class SettingsActivity : Activity() {
             }
         )
 
+        content.addView(
+            makeButton("Favorite Conferences (College)") {
+                startActivity(
+                    Intent(this, FavoriteConferencesActivity::class.java)
+                )
+            }
+        )
+
         favoritesText = TextView(this).apply {
             textSize = 14f
             setTextColor(gray)
@@ -325,7 +333,9 @@ class SettingsActivity : Activity() {
     private fun refreshFavoritesText() {
         val leagues = FavoritesStore.getFavoriteLeagues(this).size
         val teams = FavoritesStore.getFavoriteTeams(this).size
-        favoritesText.text = "Competitions selected: $leagues    Teams selected: $teams"
+        val conferences = FavoritesStore.getFavoriteConferences(this).size
+        favoritesText.text =
+            "Competitions: $leagues    Teams: $teams    Conferences: $conferences"
     }
 
     private fun sectionTitle(text: String): TextView {

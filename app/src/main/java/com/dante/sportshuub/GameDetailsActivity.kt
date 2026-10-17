@@ -28,6 +28,7 @@ class GameDetailsActivity : FragmentActivity() {
     // Parts of the screen that get refreshed when real data arrives.
     private lateinit var scoreView: TextView
     private lateinit var statusView: TextView
+    private lateinit var previewBox: TextView
     private lateinit var lineScoreTitle: TextView
     private lateinit var lineScoreBox: LinearLayout
     private lateinit var statsBox: LinearLayout
@@ -54,7 +55,8 @@ class GameDetailsActivity : FragmentActivity() {
             homeLogo = intent.getStringExtra("homeLogo") ?: "",
             network = intent.getStringExtra("network") ?: "",
             streamingService = intent.getStringExtra("streamingService") ?: "",
-            iptvChannel = intent.getStringExtra("iptvChannel") ?: ""
+            iptvChannel = intent.getStringExtra("iptvChannel") ?: "",
+            state = intent.getStringExtra("state") ?: ""
         )
 
         // Tile ids look like "NBA_401234567" (league key + ESPN game id).
@@ -120,6 +122,9 @@ class GameDetailsActivity : FragmentActivity() {
     private fun applyDetail(d: EspnGameDetail) {
 
         hasDetail = true
+
+        // The stream preview only makes sense while the game is being played.
+        previewBox.visibility = if (d.state == "in") View.VISIBLE else View.GONE
 
         if (d.state != "pre" && d.awayScore.isNotEmpty() && d.homeScore.isNotEmpty()) {
             scoreView.text = "${d.awayScore}  -  ${d.homeScore}"
@@ -422,6 +427,8 @@ class GameDetailsActivity : FragmentActivity() {
         // ---- Preview placeholder (live stream preview comes later) ----
 
         val preview = TextView(this)
+        previewBox = preview
+        preview.visibility = if (game.state == "in") View.VISIBLE else View.GONE
 
         preview.text = "GAME PREVIEW"
         preview.textSize = 22f

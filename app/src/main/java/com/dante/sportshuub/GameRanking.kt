@@ -70,9 +70,13 @@ object GameRanking {
 
     fun topGames(games: List<EspnGame>, limit: Int = 12): List<EspnGame> {
         val now = System.currentTimeMillis()
+
+        // Score each game once (not once per sort comparison).
         return games
-            .sortedByDescending { topScore(it, now) }
+            .map { it to topScore(it, now) }
+            .sortedByDescending { it.second }
             .take(limit)
+            .map { it.first }
     }
 
     private fun topScore(game: EspnGame, now: Long): Int {

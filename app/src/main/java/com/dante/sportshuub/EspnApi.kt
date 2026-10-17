@@ -1,5 +1,6 @@
 package com.dante.sportshuub
 
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
@@ -9,6 +10,7 @@ import java.net.URL
 object EspnApi {
 
     private const val BASE = "https://site.api.espn.com/apis/site/v2/sports"
+    private const val STANDINGS_BASE = "https://site.api.espn.com/apis/v2/sports"
 
     fun scoreboardUrl(league: LeagueInfo): String =
         "$BASE/${league.espnSport}/${league.espnLeague}/scoreboard${league.scoreboardQuery}"
@@ -275,5 +277,72 @@ object EspnApi {
             leaders = leaders,
             lineScore = lineScore
         )
+    }
+
+    // =====================================================
+    // CONFERENCES (college): who belongs to which conference
+    // =====================================================
+
+    // Blocking. Call off the main thread. Returns an empty list if ESPN's
+    // standings can't be read.
+    fun fetchConferences(league: LeagueInfo): List<ConferenceInfo> {
+        val base = "$STANDINGS_BASE/${league.espnSport}/${league.espnLeague}/standings"
+
+        val urls = mutableListOf<String>()
+        if (league.standingsGroup.isNotEmpty()) {
+            urls.add("$base?group=${league.standingsGroup}")
+        }
+        urls.add(base)
+
+        for (url in urls) {
+            try {
+                val conferences = parseConferences(league, fetchJson(url))
+                if (conferences.isNotEmpty()) return conferences
+                Log.w("EspnApi", "No conferences found at $url")
+            } catch (e: Exception) {
+                Log.e("EspnApi", "Conferences failed at $url: ${e.message}")
+            }
+        }
+        return emptyList()
+    }
+
+    fun parseConferences(league: LeagueInfo, json: JSONObject): List<ConferenceInfo> {
+        val out = mutableListOf<ConferenceInfo>()
+        collectConferences(league.key, json, out)
+        return out.distinctBy { it.id }
+    }
+
+    // A conference is a leaf node that carries standings entries (its teams).
+    private fun collectConferences(
+        leagueKey: String,
+        node: JSONObject,
+        out: MutableList<ConferenceInfo>
+    ) {
+        val children = node.optJSONArray("children")
+
+        if (children != null && children.length() > 0) {
+            for (i in 0 until children.length()) {
+                val child = children.optJSONObject(i) ?: continue
+                collectConferences(leagueKey, child, out)
+            }
+            return
+        }
+
+        val entries = node.optJSONObject("standings")?.optJSONArray("entries") ?: return
+        val id = node.optString("id")
+        if (id.isEmpty()) return
+
+        val teamIds = mutableListOf<String>()
+        for (i in 0 until entries.length()) {
+            val teamId = entries.optJSONObject(i)?.optJSONObject("team")?.optString("id")
+            if (!teamId.isNullOrEmpty()) teamIds.add(teamId)
+        }
+        if (teamIds.isEmpty()) return
+
+        val name = node.optString("name").ifEmpty { node.optString("abbreviation") }
+        val shortName = node.optString("abbreviation")
+            .ifEmpty { node.optString("shortName") }
+
+        out.add(ConferenceInfo(leagueKey, id, name, shortName, teamIds))
     }
 }

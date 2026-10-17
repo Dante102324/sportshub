@@ -51,6 +51,9 @@
             android:name=".FavoriteCompetitionsActivity"
             android:exported="false" />
         <activity
+            android:name=".FavoriteConferencesActivity"
+            android:exported="false" />
+        <activity
             android:name=".FavoriteTeamsActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize" />

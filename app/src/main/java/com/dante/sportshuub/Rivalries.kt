@@ -80,19 +80,23 @@ object Rivalries {
         Rivalry("Kentucky-Louisville", "Kentucky Wildcats", "Louisville Cardinals")
     )
 
+    private val accentMarks = Regex("\\p{M}+")
+
+    // Normalized once, not on every lookup.
+    private val prepared = rivalries.map {
+        Triple(it.label, normalize(it.teamA), normalize(it.teamB))
+    }
+
     // Returns the rivalry's name if this game is one, otherwise null.
     fun find(game: EspnGame): String? {
         val home = normalize(game.home.name)
         val away = normalize(game.away.name)
 
-        for (r in rivalries) {
-            val a = normalize(r.teamA)
-            val b = normalize(r.teamB)
-
+        for ((label, a, b) in prepared) {
             if ((home.contains(a) && away.contains(b)) ||
                 (home.contains(b) && away.contains(a))
             ) {
-                return r.label
+                return label
             }
         }
         return null
@@ -100,6 +104,6 @@ object Rivalries {
 
     private fun normalize(text: String): String =
         Normalizer.normalize(text, Normalizer.Form.NFD)
-            .replace(Regex("\\p{M}+"), "")
+            .replace(accentMarks, "")
             .lowercase()
 }

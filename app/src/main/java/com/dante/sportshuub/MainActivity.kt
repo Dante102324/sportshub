@@ -32,6 +32,9 @@ class MainActivity : FragmentActivity() {
 
     private var lastFavoritesSignature = ""
 
+    // Team keys of every team in the user's favorite conferences.
+    private var conferenceTeamKeys: Set<String> = emptySet()
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         TeamRepository.initializeDatabase(this)
@@ -45,14 +48,31 @@ class MainActivity : FragmentActivity() {
 
         // Redraw only when favorites changed (e.g. after visiting Settings).
         if (gamesLoaded && favoritesSignature() != lastFavoritesSignature) {
-            showTab(selectedTab)
+            lastFavoritesSignature = favoritesSignature()
+
+            Thread {
+                val keys = try {
+                    ConferenceRepository.favoriteConferenceTeamKeys(this)
+                } catch (e: Exception) {
+                    Log.e("MainActivity", "Conference lookup failed: ${e.message}")
+                    emptySet()
+                }
+
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    conferenceTeamKeys = keys
+                    showTab(selectedTab)
+                }
+            }.start()
         }
     }
 
     private fun favoritesSignature(): String =
         FavoritesStore.getFavoriteLeagues(this).sorted().joinToString(",") +
             "|" +
-            FavoritesStore.getFavoriteTeams(this).sorted().joinToString(",")
+            FavoritesStore.getFavoriteTeams(this).sorted().joinToString(",") +
+            "|" +
+            FavoritesStore.getFavoriteConferences(this).sorted().joinToString(",")
 
     // =====================================================
     // HOME SCREEN
@@ -243,7 +263,8 @@ class MainActivity : FragmentActivity() {
         }
 
         val favLeagues = FavoritesStore.getFavoriteLeagues(this)
-        val favTeams = FavoritesStore.getFavoriteTeams(this)
+        // Teams in favorite conferences count as favorite teams.
+        val favTeams = FavoritesStore.getFavoriteTeams(this) + conferenceTeamKeys
 
         lastFavoritesSignature = favoritesSignature()
 
@@ -265,7 +286,12 @@ class MainActivity : FragmentActivity() {
                 newestFirst = true
             )
             3 -> GameRanking.favoriteGames(allGames, favLeagues, favTeams)
-            else -> GameRanking.topGames(allGames)
+            else -> try {
+                GameRanking.topGames(allGames)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Top games failed", e)
+                emptyList()
+            }
         }
 
         if (games.isEmpty()) {
@@ -274,7 +300,9 @@ class MainActivity : FragmentActivity() {
                 1 -> "No upcoming games today"
                 2 -> "No finished games yet today"
                 3 ->
-                    if (favLeagues.isEmpty() && favTeams.isEmpty()) {
+                    if (favLeagues.isEmpty() && favTeams.isEmpty() &&
+                    FavoritesStore.getFavoriteConferences(this).isEmpty()
+                ) {
                         "No favorites yet. Pick teams and competitions in Settings (⚙)."
                     } else {
                         "No games for your favorites today"
@@ -376,10 +404,18 @@ class MainActivity : FragmentActivity() {
                 "Per league: " + espnGames.groupingBy { it.leagueKey }.eachCount()
             )
 
+            val confKeys = try {
+                ConferenceRepository.favoriteConferenceTeamKeys(this)
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Conference lookup failed: ${e.message}")
+                emptySet()
+            }
+
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
 
                 allGames = espnGames
+                conferenceTeamKeys = confKeys
                 gamesLoaded = true
                 showTab(selectedTab)
             }
@@ -609,6 +645,7 @@ class MainActivity : FragmentActivity() {
             intent.putExtra("network", game.network)
             intent.putExtra("streamingService", game.streamingService)
             intent.putExtra("iptvChannel", game.iptvChannel)
+            intent.putExtra("state", game.state)
 
             startActivity(intent)
         }
