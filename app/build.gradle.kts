@@ -26,15 +26,21 @@ android {
         versionCode = 1
         versionName = "1.0"
 
+        // Free by default: Groq's OpenAI-compatible server.
         buildConfigField(
             "String",
-            "OPENAI_API_KEY",
-            "\"${localProperties.getProperty("OPENAI_API_KEY", "")}\""
+            "AI_API_KEY",
+            "\"${localProperties.getProperty("AI_API_KEY", "")}\""
         )
         buildConfigField(
             "String",
-            "OPENAI_MODEL",
-            "\"${localProperties.getProperty("OPENAI_MODEL", "gpt-5.6")}\""
+            "AI_BASE_URL",
+            "\"${localProperties.getProperty("AI_BASE_URL", "https://api.groq.com/openai/v1")}\""
+        )
+        buildConfigField(
+            "String",
+            "AI_MODEL",
+            "\"${localProperties.getProperty("AI_MODEL", "llama-3.3-70b-versatile")}\""
         )
     }
 

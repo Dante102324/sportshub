@@ -18,7 +18,7 @@ object GameStore {
 // Turns the scoreboard into a compact text list for the AI to read.
 object SportsAiContext {
 
-    private const val MAX_GAMES = 150
+    private const val MAX_GAMES = 70
 
     private fun teamText(team: EspnGameTeam, showScore: Boolean): String {
         val name = team.name.ifEmpty { team.abbreviation }
@@ -52,7 +52,8 @@ object SportsAiContext {
                 }
                 val showScore = game.state != "pre"
 
-                "$league [$tag]: ${teamText(game.away, showScore)} at " +
+                "$league [$tag] id=${game.leagueKey}_${game.id}: " +
+                    "${teamText(game.away, showScore)} at " +
                     "${teamText(game.home, showScore)} (${game.statusText})"
             }
 

@@ -78,14 +78,14 @@ class AskAiActivity : FragmentActivity() {
             }
         }
 
-        if (OpenAiClient.isConfigured()) {
+        if (AiClient.isConfigured()) {
             addBubble(
                 "Ask me anything about sports. Type below, or press the microphone button and speak.",
                 user = false
             )
         } else {
             addBubble(
-                "The AI isn't set up yet. Add OPENAI_API_KEY to local.properties, sync Gradle, and rebuild.",
+                "The AI isn't set up yet. Add AI_API_KEY to local.properties, sync Gradle, and rebuild.",
                 user = false
             )
         }
@@ -130,9 +130,9 @@ class AskAiActivity : FragmentActivity() {
         addBubble(text, user = true)
         history.add(ChatTurn("user", text))
 
-        if (!OpenAiClient.isConfigured()) {
+        if (!AiClient.isConfigured()) {
             addBubble(
-                "The AI isn't set up yet. Add OPENAI_API_KEY to local.properties.",
+                "The AI isn't set up yet. Add AI_API_KEY to local.properties.",
                 user = false
             )
             history.removeAt(history.lastIndex)
@@ -146,7 +146,7 @@ class AskAiActivity : FragmentActivity() {
 
         Thread {
             val result = runCatching {
-                OpenAiClient.ask(turns, SportsAiContext.build())
+                AiClient.ask(turns, SportsAiContext.build())
             }
 
             runOnUiThread {

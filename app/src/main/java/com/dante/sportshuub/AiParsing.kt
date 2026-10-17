@@ -10,58 +10,120 @@ data class ChatTurn(
 
 class AiException(message: String) : Exception(message)
 
-// Everything about the OpenAI request/response format, kept free of Android
-// classes so it is easy to reason about.
+// The server answered with an error status.
+class AiHttpException(val code: Int, val body: String) : Exception("HTTP $code")
+
+data class ToolCall(
+    val id: String,
+    val name: String,
+    val arguments: String   // JSON text
+)
+
+data class AssistantMessage(
+    val content: String,
+    val toolCalls: List<ToolCall>
+)
+
+// Request/response format for OpenAI-compatible "chat completions" servers
+// (Groq, OpenRouter, Mistral, Gemini's compatibility endpoint, ...). Kept free
+// of Android classes.
 object AiParsing {
+
+    fun buildMessages(instructions: String, turns: List<ChatTurn>): JSONArray {
+
+        val messages = JSONArray()
+
+        messages.put(
+            JSONObject().put("role", "system").put("content", instructions)
+        )
+
+        for (turn in turns) {
+            messages.put(
+                JSONObject().put("role", turn.role).put("content", turn.text)
+            )
+        }
+        return messages
+    }
 
     fun buildRequestBody(
         model: String,
-        instructions: String,
-        turns: List<ChatTurn>
+        messages: JSONArray,
+        tools: JSONArray?
     ): JSONObject {
 
-        val input = JSONArray()
+        val body = JSONObject()
+            .put("model", model)
+            .put("messages", messages)
+            .put("temperature", 0.3)
 
-        for (turn in turns) {
-            input.put(
+        if (tools != null && tools.length() > 0) {
+            body.put("tools", tools)
+            body.put("tool_choice", "auto")
+        }
+        return body
+    }
+
+    fun parseAssistantMessage(json: JSONObject): AssistantMessage {
+
+        val message = json.optJSONArray("choices")
+            ?.optJSONObject(0)
+            ?.optJSONObject("message")
+            ?: return AssistantMessage("", emptyList())
+
+        val content = if (message.isNull("content")) "" else message.optString("content")
+
+        val calls = mutableListOf<ToolCall>()
+        val array = message.optJSONArray("tool_calls")
+
+        if (array != null) {
+            for (i in 0 until array.length()) {
+                val call = array.optJSONObject(i) ?: continue
+                val function = call.optJSONObject("function") ?: continue
+                val name = function.optString("name")
+                if (name.isEmpty()) continue
+
+                calls.add(
+                    ToolCall(
+                        id = call.optString("id").ifEmpty { "call_$i" },
+                        name = name,
+                        arguments = function.optString("arguments").ifEmpty { "{}" }
+                    )
+                )
+            }
+        }
+        return AssistantMessage(content, calls)
+    }
+
+    // The assistant's request to run tools, as it must be sent back.
+    fun assistantToolCallMessage(message: AssistantMessage): JSONObject {
+
+        val calls = JSONArray()
+
+        for (call in message.toolCalls) {
+            calls.put(
                 JSONObject()
-                    .put("role", turn.role)
-                    .put("content", turn.text)
+                    .put("id", call.id)
+                    .put("type", "function")
+                    .put(
+                        "function",
+                        JSONObject()
+                            .put("name", call.name)
+                            .put("arguments", call.arguments)
+                    )
             )
         }
 
-        val tools = JSONArray().put(JSONObject().put("type", "web_search"))
-
         return JSONObject()
-            .put("model", model)
-            .put("instructions", instructions)
-            .put("input", input)
-            .put("tools", tools)
+            .put("role", "assistant")
+            .put("content", JSONObject.NULL)
+            .put("tool_calls", calls)
     }
 
-    // The Responses API returns a list of output items; the answer is the text
-    // of the "message" items (web-search calls appear as separate items).
-    fun parseResponseText(json: JSONObject): String {
-
-        val output = json.optJSONArray("output") ?: return ""
-        val parts = mutableListOf<String>()
-
-        for (i in 0 until output.length()) {
-            val item = output.optJSONObject(i) ?: continue
-            if (item.optString("type") != "message") continue
-
-            val content = item.optJSONArray("content") ?: continue
-
-            for (j in 0 until content.length()) {
-                val piece = content.optJSONObject(j) ?: continue
-                if (piece.optString("type") == "output_text") {
-                    val text = piece.optString("text")
-                    if (text.isNotBlank()) parts.add(text)
-                }
-            }
-        }
-        return parts.joinToString("\n")
-    }
+    fun toolResultMessage(id: String, content: String): JSONObject =
+        JSONObject()
+            .put("role", "tool")
+            .put("tool_call_id", id)
+            .put("content", content)
 
     fun parseErrorMessage(body: String): String {
         return try {
@@ -75,9 +137,9 @@ object AiParsing {
         val detail = parseErrorMessage(body)
 
         return when (code) {
-            401 -> "OpenAI rejected the API key (401). Check OPENAI_API_KEY in local.properties."
-            429 -> "OpenAI says the account is rate limited or out of credit (429)."
-            else -> "OpenAI error $code" + if (detail.isNotEmpty()) ": $detail" else ""
+            401 -> "The AI service rejected the API key (401). Check AI_API_KEY in local.properties."
+            429 -> "The free usage limit was reached (429). Wait a little while and try again."
+            else -> "AI service error $code" + if (detail.isNotEmpty()) ": $detail" else ""
         }
     }
 

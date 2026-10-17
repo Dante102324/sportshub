@@ -7,13 +7,12 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-// Talks to OpenAI's Responses API. The key and model come from
-// local.properties (see app/build.gradle.kts), never from the source code.
-object OpenAiClient {
+// Talks to any OpenAI-compatible chat server (Groq by default, which has a
+// free tier). The key, server and model come from local.properties, never from
+// the source code (see app/build.gradle.kts).
+object AiClient {
 
-    private const val URL_RESPONSES = "https://api.openai.com/v1/responses"
-
-    fun isConfigured(): Boolean = BuildConfig.OPENAI_API_KEY.isNotBlank()
+    fun isConfigured(): Boolean = BuildConfig.AI_API_KEY.isNotBlank()
 
     private fun instructions(liveContext: String): String {
 
@@ -24,7 +23,8 @@ object OpenAiClient {
 You are the sports assistant inside a TV sports app. The viewer asks questions out loud or by typing, and your answer may be read aloud.
 Answer in one to four short sentences of plain text: no markdown, no lists, no links, no emojis. Say full team names instead of abbreviations.
 Current date and time: $now.
-Use the live scoreboard below first for scores, schedules and what is on today. For anything else (standings, player and team stats, injuries, news, history) use web search when the answer could have changed recently, and say so if you are not sure.
+Use the live scoreboard below first for scores, schedules and what is on today. You can call tools for standings, college rankings and game details (box score, stats, leaders); use them instead of guessing.
+You cannot browse the web. For other questions (history, players, rules) answer from your own knowledge, mention that it may be out of date when it concerns recent events, and never invent scores, records or stats. If you don't know, say so.
 If a question is not about sports, politely steer the viewer back to sports.
 
 $liveContext
@@ -35,24 +35,32 @@ $liveContext
     fun ask(turns: List<ChatTurn>, liveContext: String): String {
 
         if (!isConfigured()) {
-            throw AiException("The AI isn't set up yet. Add OPENAI_API_KEY to local.properties.")
+            throw AiException("The AI isn't set up yet. Add AI_API_KEY to local.properties.")
         }
 
-        val body = AiParsing.buildRequestBody(
-            BuildConfig.OPENAI_MODEL,
-            instructions(liveContext),
-            turns
-        )
+        val messages = AiParsing.buildMessages(instructions(liveContext), turns)
 
-        val conn = URL(URL_RESPONSES).openConnection() as HttpURLConnection
+        return AiLoop.run(
+            messages = messages,
+            model = BuildConfig.AI_MODEL,
+            tools = AiTools.definitions(),
+            post = { body -> post(body) },
+            executeTool = { name, arguments -> AiTools.execute(name, arguments) }
+        )
+    }
+
+    private fun post(body: JSONObject): JSONObject {
+
+        val url = BuildConfig.AI_BASE_URL.trimEnd('/') + "/chat/completions"
+        val conn = URL(url).openConnection() as HttpURLConnection
 
         try {
             conn.requestMethod = "POST"
             conn.connectTimeout = 15_000
-            conn.readTimeout = 90_000   // web search can take a while
+            conn.readTimeout = 60_000
             conn.doOutput = true
             conn.setRequestProperty("Content-Type", "application/json")
-            conn.setRequestProperty("Authorization", "Bearer ${BuildConfig.OPENAI_API_KEY}")
+            conn.setRequestProperty("Authorization", "Bearer ${BuildConfig.AI_API_KEY}")
 
             conn.outputStream.use {
                 it.write(body.toString().toByteArray(Charsets.UTF_8))
@@ -63,16 +71,10 @@ $liveContext
             val text = stream?.bufferedReader()?.use { it.readText() } ?: ""
 
             if (code !in 200..299) {
-                throw AiException(AiParsing.friendlyError(code, text))
+                throw AiHttpException(code, text)
             }
 
-            val answer = AiParsing.parseResponseText(JSONObject(text))
-
-            if (answer.isBlank()) {
-                throw AiException("I didn't get an answer back. Try asking another way.")
-            }
-
-            return AiParsing.cleanForDisplay(answer)
+            return JSONObject(text)
 
         } finally {
             conn.disconnect()
