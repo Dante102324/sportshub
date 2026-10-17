@@ -107,6 +107,28 @@ class MainActivity : FragmentActivity() {
             LinearLayout.LayoutParams(0, dp(70), 1f)
         )
 
+        val mic = TextView(this)
+
+        mic.text = "🎤"
+        mic.textSize = 28f
+        mic.gravity = Gravity.CENTER
+        mic.setTextColor(white)
+        mic.isFocusable = true
+        mic.isFocusableInTouchMode = true
+        mic.contentDescription = "Ask Sports AI by voice"
+
+        mic.setOnClickListener {
+            startActivity(
+                Intent(this, AskAiActivity::class.java)
+                    .putExtra(AskAiActivity.EXTRA_LISTEN, true)
+            )
+        }
+
+        header.addView(
+            mic,
+            LinearLayout.LayoutParams(dp(70), dp(70))
+        )
+
         val search = TextView(this)
 
         search.text = "🔍"
@@ -115,6 +137,11 @@ class MainActivity : FragmentActivity() {
         search.setTextColor(white)
         search.isFocusable = true
         search.isFocusableInTouchMode = true
+        search.contentDescription = "Search or ask Sports AI"
+
+        search.setOnClickListener {
+            startActivity(Intent(this, AskAiActivity::class.java))
+        }
 
         header.addView(
             search,
@@ -432,6 +459,8 @@ class MainActivity : FragmentActivity() {
                 if (isFinishing || isDestroyed) return@runOnUiThread
 
                 allGames = rankedGames
+                GameStore.games = rankedGames
+                GameStore.updatedAt = System.currentTimeMillis()
                 conferenceTeamKeys = confKeys
                 gamesLoaded = true
                 showTab(selectedTab)
