@@ -422,7 +422,9 @@ object EspnApi {
                         .ifEmpty { stat.optString("value") }
 
                     val label = stat.optString("abbreviation")
-                        .ifEmpty { stat.optString("shortDisplayName").ifEmpty { name } }
+                        .ifEmpty { stat.optString("shortDisplayName") }
+                        .ifEmpty { stat.optString("displayName") }
+                        .ifEmpty { name }
 
                     stats[name] = Pair(shown, label)
                 }
@@ -558,7 +560,9 @@ object EspnApi {
                         logoUrl = team.optJSONArray("logos")
                             ?.optJSONObject(0)
                             ?.optString("href") ?: team.optString("logo"),
-                        record = entry.optString("recordSummary"),
+                        record = entry.optString("recordSummary").ifEmpty {
+                            team.optJSONObject("record")?.optString("summary").orEmpty()
+                        },
                         points = cleanNumber(entry.optString("points")),
                         previous = cleanNumber(entry.optString("previous"))
                     )

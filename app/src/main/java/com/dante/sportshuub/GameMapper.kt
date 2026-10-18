@@ -51,6 +51,9 @@ fun EspnGame.toTileGame(): Game {
         homeLogo = home.logoUrl,
         state = state,
         awayRank = away.rank,
-        homeRank = home.rank
+        homeRank = home.rank,
+        leagueKey = leagueKey,
+        awayId = away.espnId,
+        homeId = home.espnId
     )
 }

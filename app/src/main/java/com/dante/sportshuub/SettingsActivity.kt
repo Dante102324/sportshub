@@ -117,6 +117,27 @@ class SettingsActivity : Activity() {
         refreshFavoritesText()
 
         // ---------------------------------------------------------
+        // SPORTS AI
+        // ---------------------------------------------------------
+
+        content.addView(sectionTitle("SPORTS AI"))
+
+        content.addView(
+            makeButton("Ask Sports AI (typed)") {
+                startActivity(Intent(this, AskAiActivity::class.java))
+            }
+        )
+
+        content.addView(
+            TextView(this).apply {
+                text = "For voice questions, use the 🎤 icon on the home screen."
+                textSize = 13f
+                setTextColor(gray)
+                setPadding(dp(4), dp(4), dp(4), dp(20))
+            }
+        )
+
+        // ---------------------------------------------------------
         // TEAM LOGOS
         // ---------------------------------------------------------
 

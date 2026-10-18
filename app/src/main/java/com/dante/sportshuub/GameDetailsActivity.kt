@@ -58,7 +58,10 @@ class GameDetailsActivity : FragmentActivity() {
             iptvChannel = intent.getStringExtra("iptvChannel") ?: "",
             state = intent.getStringExtra("state") ?: "",
             awayRank = intent.getIntExtra("awayRank", 0).takeIf { it > 0 },
-            homeRank = intent.getIntExtra("homeRank", 0).takeIf { it > 0 }
+            homeRank = intent.getIntExtra("homeRank", 0).takeIf { it > 0 },
+            leagueKey = intent.getStringExtra("leagueKey") ?: "",
+            awayId = intent.getStringExtra("awayId") ?: "",
+            homeId = intent.getStringExtra("homeId") ?: ""
         )
 
         // Tile ids look like "NBA_401234567" (league key + ESPN game id).
@@ -409,6 +412,9 @@ class GameDetailsActivity : FragmentActivity() {
         loadTeamLogo(game.awayTeam, game.awayLogo, awayLogo)
         loadTeamLogo(game.homeTeam, game.homeLogo, homeLogo)
 
+        makeTeamLink(awayLayout, game.awayId, game.awayTeam, game.awayLogo)
+        makeTeamLink(homeLayout, game.homeId, game.homeTeam, game.homeLogo)
+
         teamsLayout.addView(awayLayout, LinearLayout.LayoutParams(dp(160), dp(160)))
         teamsLayout.addView(scoreView, LinearLayout.LayoutParams(dp(220), dp(160)))
         teamsLayout.addView(homeLayout, LinearLayout.LayoutParams(dp(160), dp(160)))
@@ -559,6 +565,36 @@ class GameDetailsActivity : FragmentActivity() {
                     target.setImageBitmap(bitmap)
                 }
             }
+        }
+    }
+
+    // Selecting a team opens its page (when we know which team it is).
+    private fun makeTeamLink(
+        layout: LinearLayout,
+        teamId: String,
+        abbreviation: String,
+        logoUrl: String
+    ) {
+        val key = game.leagueKey.ifEmpty { game.id.substringBefore("_") }
+        if (teamId.isEmpty() || LeagueRegistry.byKey(key) == null) return
+
+        layout.isFocusable = true
+        layout.isFocusableInTouchMode = true
+
+        fun style(focused: Boolean) {
+            layout.background = GradientDrawable().apply {
+                setColor(Color.TRANSPARENT)
+                cornerRadius = dp(12).toFloat()
+                if (focused) setStroke(dp(3), Color.WHITE)
+            }
+        }
+
+        style(false)
+        layout.setOnFocusChangeListener { _, focused -> style(focused) }
+        layout.setOnClickListener {
+            startActivity(
+                TeamPageActivity.intent(this, key, teamId, abbreviation, abbreviation, logoUrl)
+            )
         }
     }
 

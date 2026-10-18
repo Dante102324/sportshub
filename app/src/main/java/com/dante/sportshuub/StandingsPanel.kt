@@ -2,6 +2,7 @@ package com.dante.sportshuub
 
 import android.app.AlertDialog
 import android.content.Context
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -16,7 +17,10 @@ import java.util.concurrent.ConcurrentHashMap
 
 // The STANDINGS tab: pick a competition, then a conference/division or (for
 // college football and basketball) the latest poll.
-class StandingsPanel(private val activity: FragmentActivity) {
+class StandingsPanel(
+    private val activity: FragmentActivity,
+    private val fixedLeague: LeagueInfo? = null
+) {
 
     private class LeagueData(
         val loadedAt: Long,
@@ -36,7 +40,8 @@ class StandingsPanel(private val activity: FragmentActivity) {
     private val gray = Color.rgb(180, 180, 185)
 
     private var league: LeagueInfo =
-        LeagueRegistry.byKey(prefs.getString("league", "NBA") ?: "NBA")
+        fixedLeague
+            ?: LeagueRegistry.byKey(prefs.getString("league", "NBA") ?: "NBA")
             ?: LeagueRegistry.leagues.first()
 
     // "" = the default view for the competition
@@ -57,19 +62,34 @@ class StandingsPanel(private val activity: FragmentActivity) {
         controls.orientation = LinearLayout.HORIZONTAL
         controls.setPadding(0, dp(4), 0, dp(10))
 
-        val leagueBtn = controlButton { pickLeague() }
         val viewBtn = controlButton { pickView() }
-
-        leagueButton = leagueBtn
         viewButton = viewBtn
 
+        if (fixedLeague == null) {
+            val leagueBtn = controlButton { pickLeague() }
+            leagueButton = leagueBtn
+
+            controls.addView(
+                leagueBtn,
+                LinearLayout.LayoutParams(-2, dp(48)).apply {
+                    setMargins(0, 0, dp(12), 0)
+                }
+            )
+        }
+
         controls.addView(
-            leagueBtn,
+            viewBtn,
             LinearLayout.LayoutParams(-2, dp(48)).apply {
                 setMargins(0, 0, dp(12), 0)
             }
         )
-        controls.addView(viewBtn, LinearLayout.LayoutParams(-2, dp(48)))
+
+        if (fixedLeague == null) {
+            controls.addView(
+                controlButton { openLeaguePage() }.also { it.text = "LEAGUE PAGE  ›" },
+                LinearLayout.LayoutParams(-2, dp(48))
+            )
+        }
 
         parent.addView(controls)
 
@@ -83,6 +103,20 @@ class StandingsPanel(private val activity: FragmentActivity) {
         viewBtn.text = "VIEW  ▾"
 
         load()
+    }
+
+    private fun openLeaguePage() {
+        activity.startActivity(
+            Intent(activity, LeaguePageActivity::class.java)
+                .putExtra(LeaguePageActivity.EXTRA_LEAGUE, league.key)
+        )
+    }
+
+    private fun openTeam(teamId: String, name: String, abbreviation: String, logoUrl: String) {
+        if (teamId.isEmpty()) return
+        activity.startActivity(
+            TeamPageActivity.intent(activity, league.key, teamId, name, abbreviation, logoUrl)
+        )
     }
 
     private fun updateLeagueButton() {
@@ -252,7 +286,8 @@ class StandingsPanel(private val activity: FragmentActivity) {
                     row.abbreviation,
                     row.teamName,
                     row.values,
-                    header = false
+                    header = false,
+                    onClick = { openTeam(row.teamId, row.teamName, row.abbreviation, row.logoUrl) }
                 )
             )
         }
@@ -288,7 +323,8 @@ class StandingsPanel(private val activity: FragmentActivity) {
                     team.abbreviation,
                     team.name,
                     values,
-                    header = false
+                    header = false,
+                    onClick = { openTeam(team.teamId, team.name, team.abbreviation, team.logoUrl) }
                 )
             )
         }
@@ -300,7 +336,8 @@ class StandingsPanel(private val activity: FragmentActivity) {
         abbreviation: String,
         name: String,
         values: List<String>,
-        header: Boolean
+        header: Boolean,
+        onClick: (() -> Unit)? = null
     ): LinearLayout {
 
         val row = LinearLayout(activity)
@@ -349,6 +386,10 @@ class StandingsPanel(private val activity: FragmentActivity) {
             row.isFocusableInTouchMode = true
             styleRow(row, false)
             row.setOnFocusChangeListener { v, hasFocus -> styleRow(v, hasFocus) }
+
+            if (onClick != null) {
+                row.setOnClickListener { onClick() }
+            }
         }
 
         return row

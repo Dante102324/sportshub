@@ -115,14 +115,9 @@ class MainActivity : FragmentActivity() {
         mic.setTextColor(white)
         mic.isFocusable = true
         mic.isFocusableInTouchMode = true
-        mic.contentDescription = "Ask Sports AI by voice"
+        mic.contentDescription = "Ask the device assistant"
 
-        mic.setOnClickListener {
-            startActivity(
-                Intent(this, AskAiActivity::class.java)
-                    .putExtra(AskAiActivity.EXTRA_LISTEN, true)
-            )
-        }
+        mic.setOnClickListener { launchAssistant() }
 
         header.addView(
             mic,
@@ -137,10 +132,10 @@ class MainActivity : FragmentActivity() {
         search.setTextColor(white)
         search.isFocusable = true
         search.isFocusableInTouchMode = true
-        search.contentDescription = "Search or ask Sports AI"
+        search.contentDescription = "Search players, teams and leagues"
 
         search.setOnClickListener {
-            startActivity(Intent(this, AskAiActivity::class.java))
+            startActivity(Intent(this, SearchActivity::class.java))
         }
 
         header.addView(
@@ -694,6 +689,9 @@ class MainActivity : FragmentActivity() {
             intent.putExtra("state", game.state)
             intent.putExtra("awayRank", game.awayRank ?: 0)
             intent.putExtra("homeRank", game.homeRank ?: 0)
+            intent.putExtra("leagueKey", game.leagueKey)
+            intent.putExtra("awayId", game.awayId)
+            intent.putExtra("homeId", game.homeId)
 
             startActivity(intent)
         }
@@ -720,6 +718,30 @@ class MainActivity : FragmentActivity() {
         background.setStroke(dp(3), Color.WHITE)
 
         view.background = background
+    }
+
+    // Opens the TV's built-in assistant (hold-to-talk with the remote's mic).
+    // If this device has none, falls back to the in-app voice screen.
+    private fun launchAssistant() {
+
+        val attempts = listOf(
+            Intent(Intent.ACTION_VOICE_COMMAND),
+            Intent(Intent.ACTION_ASSIST)
+        )
+
+        for (attempt in attempts) {
+            try {
+                startActivity(attempt)
+                return
+            } catch (e: Exception) {
+                Log.w("MainActivity", "Assistant launch failed: ${e.message}")
+            }
+        }
+
+        startActivity(
+            Intent(this, AskAiActivity::class.java)
+                .putExtra(AskAiActivity.EXTRA_LISTEN, true)
+        )
     }
 
     private fun dp(value: Int): Int {

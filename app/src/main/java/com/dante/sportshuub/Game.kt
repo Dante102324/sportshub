@@ -17,5 +17,8 @@ data class Game(
     val iptvChannel: String = "",
     val state: String = "",  // "pre", "in" or "post"
     val awayRank: Int? = null,   // poll rank for ranked college teams
-    val homeRank: Int? = null
+    val homeRank: Int? = null,
+    val leagueKey: String = "",
+    val awayId: String = "",     // ESPN team ids
+    val homeId: String = ""
 )
