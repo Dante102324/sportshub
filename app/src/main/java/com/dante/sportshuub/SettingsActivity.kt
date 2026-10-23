@@ -1,6 +1,8 @@
 package com.dante.sportshuub
 
 import android.app.Activity
+import android.app.AlertDialog
+import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
 import android.graphics.Color
@@ -115,6 +117,34 @@ class SettingsActivity : Activity() {
 
         content.addView(favoritesText)
         refreshFavoritesText()
+
+        // ---------------------------------------------------------
+        // HOME SCREEN
+        // ---------------------------------------------------------
+
+        content.addView(sectionTitle("HOME SCREEN"))
+
+        content.addView(
+            makeButton("Make Sports Hub my home screen") {
+                requestHomeRole()
+            }
+        )
+
+        content.addView(
+            makeButton("Exit to TV home menu") {
+                exitToTvHomeMenu()
+            }
+        )
+
+        content.addView(
+            TextView(this).apply {
+                text = "While Sports Hub is your home screen, the Home button always returns here. " +
+                    "Exit switches that off until you open Sports Hub from the TV menu again or restart."
+                textSize = 13f
+                setTextColor(gray)
+                setPadding(dp(4), dp(4), dp(4), dp(20))
+            }
+        )
 
         // ---------------------------------------------------------
         // SPORTS AI
@@ -348,6 +378,52 @@ class SettingsActivity : Activity() {
             ).format(Date(timestamp))
 
             "Last logo update attempt: $formatted"
+        }
+    }
+
+    private fun requestHomeRole() {
+
+        val roleManager = getSystemService(RoleManager::class.java)
+
+        if (roleManager == null || !roleManager.isRoleAvailable(RoleManager.ROLE_HOME)) {
+            showHomeHelp()
+            return
+        }
+
+        if (roleManager.isRoleHeld(RoleManager.ROLE_HOME)) {
+            Toast.makeText(this, "Sports Hub is already your home screen.", Toast.LENGTH_LONG).show()
+            return
+        }
+
+        try {
+            startActivityForResult(roleManager.createRequestRoleIntent(RoleManager.ROLE_HOME), 1001)
+        } catch (e: Exception) {
+            showHomeHelp()
+        }
+    }
+
+    // Many TVs don't let apps pick the home screen themselves.
+    private fun showHomeHelp() {
+        AlertDialog.Builder(this)
+            .setTitle("Set as home screen")
+            .setMessage(
+                "This TV doesn't let apps change the home screen directly. " +
+                    "From a computer, with ADB debugging on, run:\n\n" +
+                    "adb shell cmd package set-home-activity com.dante.sportshuub/.HomeEntryActivity"
+            )
+            .setPositiveButton("OK", null)
+            .show()
+    }
+
+    private fun exitToTvHomeMenu() {
+
+        LauncherMode.markExited(this)
+
+        if (LauncherMode.openSystemHome(this)) {
+            finishAffinity()
+        } else {
+            LauncherMode.clearExited(this)
+            Toast.makeText(this, "No other TV home menu was found on this device.", Toast.LENGTH_LONG).show()
         }
     }
 

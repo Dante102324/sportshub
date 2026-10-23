@@ -6,6 +6,8 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import android.view.Gravity
 import android.view.View
@@ -14,6 +16,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.addCallback
 import androidx.fragment.app.FragmentActivity
 
 class MainActivity : FragmentActivity() {
@@ -35,6 +38,19 @@ class MainActivity : FragmentActivity() {
 
     private var lastFavoritesSignature = ""
 
+    // Keeping the scores fresh while the app stays open (it is a home screen).
+    private val handler = Handler(Looper.getMainLooper())
+    private var loading = false
+    private var lastLoadTime = 0L
+    private var gamesSignature = ""
+
+    private val refreshRunnable = object : Runnable {
+        override fun run() {
+            loadRealGames()
+            handler.postDelayed(this, REFRESH_MS)
+        }
+    }
+
     // Team keys of every team in the user's favorite conferences.
     private var conferenceTeamKeys: Set<String> = emptySet()
 
@@ -42,12 +58,43 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         TeamRepository.initializeDatabase(this)
         TeamLogoUpdater.updateMissingLogos(this)
+
+        // Opened from the TV's menu: frontend mode is back on.
+        LauncherMode.clearExited(this)
+
+        // As a home screen, Back never leaves the app.
+        onBackPressedDispatcher.addCallback(this) {
+            if (selectedTab != 0) selectTab(0)
+        }
+
         setContentView(createHomeScreen())
         loadRealGames()
     }
 
+    // The Home button (or reopening the app) lands here: start fresh.
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+
+        LauncherMode.clearExited(this)
+
+        if (selectedTab != 0) selectTab(0)
+        loadRealGames()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        handler.removeCallbacks(refreshRunnable)
+    }
+
     override fun onResume() {
         super.onResume()
+
+        // Refresh now if the data is stale, then keep refreshing while visible.
+        handler.removeCallbacks(refreshRunnable)
+        if (gamesLoaded && System.currentTimeMillis() - lastLoadTime > REFRESH_MS) {
+            loadRealGames()
+        }
+        handler.postDelayed(refreshRunnable, REFRESH_MS)
 
         // Redraw only when favorites changed (e.g. after visiting Settings).
         if (gamesLoaded && favoritesSignature() != lastFavoritesSignature) {
@@ -276,6 +323,17 @@ class MainActivity : FragmentActivity() {
         return message
     }
 
+    // Redraws the current tab and puts focus back on the same game.
+    private fun redrawKeepingFocus() {
+        val focusedId = currentFocus?.tag as? String
+
+        showTab(selectedTab)
+
+        if (focusedId != null) {
+            contentContainer?.findViewWithTag<View>(focusedId)?.requestFocus()
+        }
+    }
+
     private fun showTab(index: Int) {
 
         val content = contentContainer ?: return
@@ -411,6 +469,9 @@ class MainActivity : FragmentActivity() {
     // =====================================================
 
     private fun loadRealGames() {
+        if (loading) return
+        loading = true
+
         Thread {
             val espnGames = mutableListOf<EspnGame>()
 
@@ -450,15 +511,35 @@ class MainActivity : FragmentActivity() {
                 emptySet()
             }
 
+            val signature = rankedGames.joinToString("|") {
+                "${it.leagueKey}_${it.id}:${it.state}:${it.home.score}:${it.away.score}:${it.statusText}:" +
+                    "${it.home.rank}:${it.away.rank}"
+            }
+
             runOnUiThread {
+                loading = false
+
                 if (isFinishing || isDestroyed) return@runOnUiThread
 
+                // A failed refresh (no connection) keeps what is already on screen.
+                if (rankedGames.isEmpty() && gamesLoaded) return@runOnUiThread
+
+                lastLoadTime = System.currentTimeMillis()
+
+                // Nothing changed: no redraw.
+                if (gamesLoaded && signature == gamesSignature && confKeys == conferenceTeamKeys) {
+                    return@runOnUiThread
+                }
+
+                gamesSignature = signature
                 allGames = rankedGames
                 GameStore.games = rankedGames
                 GameStore.updatedAt = System.currentTimeMillis()
                 conferenceTeamKeys = confKeys
                 gamesLoaded = true
-                showTab(selectedTab)
+
+                // The standings tab doesn't use this data; leave it alone.
+                if (selectedTab != standingsTab) redrawKeepingFocus()
             }
         }.start()
     }
@@ -511,6 +592,7 @@ class MainActivity : FragmentActivity() {
         val card = FrameLayout(this)
 
         card.id = View.generateViewId()
+        card.tag = game.id
 
         card.isFocusable = true
         card.isFocusableInTouchMode = true
@@ -750,5 +832,6 @@ class MainActivity : FragmentActivity() {
 
     companion object {
         private const val CARD_HEIGHT = 160
+        private const val REFRESH_MS = 60_000L
     }
 }
