@@ -56,11 +56,16 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Started by the Home button or at boot after "Exit to TV home menu":
+        // hand over to the TV's own menu instead.
+        if (handleHomeLaunch(intent)) {
+            finish()
+            return
+        }
+
         TeamRepository.initializeDatabase(this)
         TeamLogoUpdater.updateMissingLogos(this)
-
-        // Opened from the TV's menu: frontend mode is back on.
-        LauncherMode.clearExited(this)
 
         // As a home screen, Back never leaves the app.
         onBackPressedDispatcher.addCallback(this) {
@@ -75,10 +80,35 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
 
-        LauncherMode.clearExited(this)
+        if (handleHomeLaunch(intent)) return
 
         if (selectedTab != 0) selectTab(0)
         loadRealGames()
+    }
+
+    // The Home button and boot start this activity with the HOME category
+    // (once Sports Hub is the default home app); the app row on the TV's menu
+    // does not. After "Exit to TV home menu", Home goes to the TV's own menu
+    // until the app is opened from that menu again.
+    // Returns true if this launch was handed off to the TV's menu.
+    private fun handleHomeLaunch(launch: Intent?): Boolean {
+
+        val fromHome = launch?.hasCategory(Intent.CATEGORY_HOME) == true
+
+        Log.d("Launcher", "Started: fromHome=$fromHome exited=${LauncherMode.isExited(this)}")
+
+        if (!fromHome) {
+            // Opened from the app row: frontend mode is back on.
+            LauncherMode.clearExited(this)
+            return false
+        }
+
+        if (LauncherMode.isExited(this) && LauncherMode.openSystemHome(this)) {
+            return true
+        }
+
+        LauncherMode.clearExited(this)
+        return false
     }
 
     override fun onPause() {
@@ -88,6 +118,8 @@ class MainActivity : FragmentActivity() {
 
     override fun onResume() {
         super.onResume()
+
+        if (isFinishing) return
 
         // Refresh now if the data is stale, then keep refreshing while visible.
         handler.removeCallbacks(refreshRunnable)
@@ -163,6 +195,7 @@ class MainActivity : FragmentActivity() {
         mic.isFocusable = true
         mic.isFocusableInTouchMode = true
         mic.contentDescription = "Ask the device assistant"
+        makeHeaderButton(mic)
 
         mic.setOnClickListener { launchAssistant() }
 
@@ -180,6 +213,7 @@ class MainActivity : FragmentActivity() {
         search.isFocusable = true
         search.isFocusableInTouchMode = true
         search.contentDescription = "Search players, teams and leagues"
+        makeHeaderButton(search)
 
         search.setOnClickListener {
             startActivity(Intent(this, SearchActivity::class.java))
@@ -199,6 +233,7 @@ class MainActivity : FragmentActivity() {
         settings.isFocusable = true
         settings.isFocusableInTouchMode = true
         settings.contentDescription = "Settings"
+        makeHeaderButton(settings)
 
         settings.setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
@@ -800,6 +835,23 @@ class MainActivity : FragmentActivity() {
         background.setStroke(dp(3), Color.WHITE)
 
         view.background = background
+    }
+
+    // Shows which header icon is selected: a ring and a slight enlargement.
+    private fun makeHeaderButton(view: TextView) {
+
+        fun style(focused: Boolean) {
+            view.background = GradientDrawable().apply {
+                shape = GradientDrawable.OVAL
+                setColor(if (focused) Color.rgb(65, 65, 72) else Color.TRANSPARENT)
+                if (focused) setStroke(dp(3), Color.WHITE)
+            }
+            view.scaleX = if (focused) 1.1f else 1f
+            view.scaleY = if (focused) 1.1f else 1f
+        }
+
+        style(false)
+        view.setOnFocusChangeListener { _, focused -> style(focused) }
     }
 
     // Opens the TV's built-in assistant (hold-to-talk with the remote's mic).

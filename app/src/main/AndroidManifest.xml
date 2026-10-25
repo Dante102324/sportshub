@@ -47,15 +47,7 @@
 
                 <category android:name="android.intent.category.LEANBACK_LAUNCHER" />
             </intent-filter>
-        </activity>
-        <!-- The home door: boot and the Home button come here, then on to the app. -->
-        <activity
-            android:name=".HomeEntryActivity"
-            android:excludeFromRecents="true"
-            android:exported="true"
-            android:noHistory="true"
-            android:stateNotNeeded="true"
-            android:theme="@android:style/Theme.NoDisplay">
+            <!-- Boot and the Home button, once this is the default home app. -->
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
 

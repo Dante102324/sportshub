@@ -5,6 +5,7 @@ import android.app.AlertDialog
 import android.app.role.RoleManager
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageManager
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -30,6 +31,7 @@ class SettingsActivity : Activity() {
     private lateinit var progressText: TextView
     private lateinit var lastUpdatedText: TextView
     private lateinit var favoritesText: TextView
+    private lateinit var homeStatusText: TextView
 
     private val preferences by lazy {
         getSharedPreferences("sportshub_settings", Context.MODE_PRIVATE)
@@ -44,6 +46,9 @@ class SettingsActivity : Activity() {
         super.onResume()
         if (::favoritesText.isInitialized) {
             refreshFavoritesText()
+        }
+        if (::homeStatusText.isInitialized) {
+            refreshHomeStatus()
         }
     }
 
@@ -135,6 +140,15 @@ class SettingsActivity : Activity() {
                 exitToTvHomeMenu()
             }
         )
+
+        homeStatusText = TextView(this).apply {
+            textSize = 14f
+            setTextColor(white)
+            setPadding(dp(4), dp(2), dp(4), dp(8))
+        }
+
+        content.addView(homeStatusText)
+        refreshHomeStatus()
 
         content.addView(
             TextView(this).apply {
@@ -381,6 +395,23 @@ class SettingsActivity : Activity() {
         }
     }
 
+    // What the system says the Home button opens right now.
+    private fun refreshHomeStatus() {
+
+        val homeIntent = Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
+
+        @Suppress("DEPRECATION")
+        val resolved = packageManager.resolveActivity(homeIntent, PackageManager.MATCH_DEFAULT_ONLY)
+        val owner = resolved?.activityInfo?.packageName
+
+        homeStatusText.text = when {
+            owner == packageName -> "Home button: opens Sports Hub."
+            owner == null || owner == "android" ->
+                "Home button: no default home app is set (the TV asks which to use)."
+            else -> "Home button: currently opens $owner"
+        }
+    }
+
     private fun requestHomeRole() {
 
         val roleManager = getSystemService(RoleManager::class.java)
@@ -409,7 +440,7 @@ class SettingsActivity : Activity() {
             .setMessage(
                 "This TV doesn't let apps change the home screen directly. " +
                     "From a computer, with ADB debugging on, run:\n\n" +
-                    "adb shell cmd package set-home-activity com.dante.sportshuub/.HomeEntryActivity"
+                    "adb shell cmd package set-home-activity com.dante.sportshuub/.MainActivity"
             )
             .setPositiveButton("OK", null)
             .show()
